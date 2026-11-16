@@ -16,24 +16,26 @@ function shader(gl: WebGL2RenderingContext, type: number, source: string) {
   return result;
 }
 
-export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed }: {
+export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative }: {
   line: SpectrumEvent | null; epoch: number; floor: number; range: number; average: number;
-  channels: AcquisitionChannel[]; centerHz: number; speed: number;
+  channels: AcquisitionChannel[]; centerHz: number; speed: number; automatic: boolean; calibrationDb: number; relative: boolean;
 }) {
   const fft = useRef<HTMLCanvasElement>(null);
   const waterfall = useRef<HTMLCanvasElement>(null);
   const previous = useRef<number[]>([]);
   const latest = useRef<SpectrumEvent | null>(null);
   const markerLevels = useRef(new Map<number, { frequency: number; raw: number; level: number }>());
-  const renderer = useRef<{ push: (values: Float32Array) => void; draw: () => void } | null>(null);
-  const options = useRef({ floor, range, speed });
-  options.current = { floor, range, speed };
+  const renderer = useRef<{ push: (values: Float32Array, timeSeconds: number) => void; draw: () => void } | null>(null);
+  const options = useRef({ floor, range, speed, calibrationDb, automatic });
+  options.current = { floor, range, speed, calibrationDb, automatic };
   const [error, setError] = useState("");
+  const [noiseFloor, setNoiseFloor] = useState<number | null>(null);
 
   useEffect(() => {
     previous.current = [];
     latest.current = null;
     markerLevels.current.clear();
+    setNoiseFloor(null);
     const canvas = waterfall.current;
     if (!canvas) return;
     const gl = canvas.getContext("webgl2", { antialias: false, alpha: false });
@@ -41,9 +43,9 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     let program: WebGLProgram | null = null;
     let texture: WebGLTexture | null = null;
     const history = new WaterfallBuffer();
-    history.recolor(floor, range);
+    history.recolor(floor, range, calibrationDb, automatic);
     let arrivedAt = -Infinity, animation = 0;
-    let appliedFloor = floor, appliedRange = range;
+    let appliedFloor = floor, appliedRange = range, appliedCalibration = calibrationDb, appliedAutomatic = automatic;
     try {
       const vertex = shader(gl, gl.VERTEX_SHADER, `#version 300 es
         out vec2 uv;
@@ -82,9 +84,11 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
       const rowsUniform = gl.getUniformLocation(activeProgram, "visibleRows");
       const progressUniform = gl.getUniformLocation(activeProgram, "progress");
       const draw = () => {
-        if (appliedFloor !== options.current.floor || appliedRange !== options.current.range) {
+        if (appliedFloor !== options.current.floor || appliedRange !== options.current.range ||
+            appliedCalibration !== options.current.calibrationDb || appliedAutomatic !== options.current.automatic) {
           appliedFloor = options.current.floor; appliedRange = options.current.range;
-          history.recolor(appliedFloor, appliedRange);
+          appliedCalibration = options.current.calibrationDb; appliedAutomatic = options.current.automatic;
+          history.recolor(appliedFloor, appliedRange, appliedCalibration, appliedAutomatic);
           gl.bindTexture(gl.TEXTURE_2D, texture);
           gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, BINS, ROWS, gl.RGBA, gl.UNSIGNED_BYTE, history.pixels);
         }
@@ -104,8 +108,9 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
         draw();
         animation = performance.now() - arrivedAt < waterfallLineMs ? requestAnimationFrame(animate) : 0;
       };
-      renderer.current = { draw, push(values) {
-        const row = history.push(values);
+      renderer.current = { draw, push(values, timeSeconds) {
+        const row = history.push(values, timeSeconds);
+        setNoiseFloor(history.noiseFloorDb);
         const pixels = history.pixels.subarray(row * BINS * 4, (row + 1) * BINS * 4);
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, row, BINS, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
@@ -125,7 +130,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     };
   }, [epoch]);
 
-  useEffect(() => { renderer.current?.draw(); }, [floor, range, speed]);
+  useEffect(() => { renderer.current?.draw(); }, [floor, range, speed, calibrationDb, automatic]);
   useEffect(() => {
     const canvas = fft.current;
     if (!canvas) return;
@@ -159,14 +164,16 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
         ctx.beginPath();
         previous.current.forEach((value, n) => {
           const x = 40 + (n + .5) / 1024 * (width - 48);
-          const y = ordinate(value);
+          const y = ordinate(value <= -240 ? value : value + calibrationDb);
           if (n === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         });
         ctx.stroke();
         for (const channel of channels) {
           const frequency = centerHz + channel.frequencyOffsetHz;
-          const level = markerLevels.current.get(channel.channel)?.level;
-          if (level === undefined || frequency < 406000000 || frequency > 406100000 || level < -150 || level > -70) continue;
+          const held = markerLevels.current.get(channel.channel)?.level;
+          if (held === undefined) continue;
+          const level = held + calibrationDb;
+          if (frequency < 406000000 || frequency > 406100000 || level < -150 || level > -70) continue;
           ctx.fillStyle = candidateColors[channel.channel];
           ctx.beginPath();
           ctx.arc(40 + (frequency - 406000000) / 100000 * (width - 48), ordinate(level), 5, 0, 2 * Math.PI);
@@ -179,7 +186,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     if (line && line !== latest.current) {
       latest.current = line;
       previous.current = averageSpectrum(line, previous.current, average);
-      renderer.current?.push(new Float32Array(previous.current));
+      renderer.current?.push(new Float32Array(previous.current), line.timeSeconds);
     }
     // Hold the acquisition ordinate even if RTL AGC changes during the trial.
     if (line) {
@@ -195,13 +202,14 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     draw();
     const observer = new ResizeObserver(draw); observer.observe(canvas);
     return () => observer.disconnect();
-  }, [line, channels, centerHz, average, epoch]);
+  }, [line, channels, centerHz, average, calibrationDb, epoch]);
 
   const mono = "Consolas,monospace";
   return <section style={{ margin: "0 18px", background: "#000", border: "1px solid #335555", borderRadius: 3, overflow: "hidden" }}
     aria-label="Spectre et waterfall 406 a 406,100 MHz">
     <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 12px", font: `10px ${mono}`, background: "#001000", color: "#00ffff" }}>
-      <span>FFT <b style={{ marginLeft: 10 }}>406.000 — 406.100 MHz</b></span><span>Niveau relatif · non calibree en dBm</span></div>
+      <span>FFT <b style={{ marginLeft: 10 }}>406.000 — 406.100 MHz</b></span>
+      <span>{relative ? "Niveau relatif · WAV" : `dBm estimes · correction ${calibrationDb.toFixed(1)} dB`}</span></div>
     <canvas ref={fft} style={{ display: "block", width: "100%", height: 230 }} aria-label="Spectre FFT mesure" />
     <div style={{ display: "flex", borderTop: "1px solid #003333" }}>
       <span style={{ width: 40, padding: "8px 3px", boxSizing: "border-box", color: "#99baba", font: `9px ${mono}`,
@@ -213,6 +221,10 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     {error && <p role="alert" style={{ background: "#330f0f", color: "#ff8484", padding: 12, margin: 0 }}>{error}</p>}
     <div style={{ display: "flex", justifyContent: "space-between", font: `10px ${mono}`, color: "#99baba", padding: "6px 9px 6px 40px" }}>
       <span>406.000 MHz</span><span>406.050 MHz</span><span>406.100 MHz</span></div>
+    <div style={{ padding: "6px 12px", color: "#ffffff", fontSize: 10 }}>
+      {automatic ? `WF Auto · bruit ${noiseFloor === null ? "—" : (noiseFloor + calibrationDb).toFixed(1)} ${relative ? "dB relatifs" : "dBm"} · 3 dB/couleur`
+        : "WF Manuel · Base plus haute = fond plus sombre ; Range plus haut = contraste plus faible"}
+    </div>
     <div style={{ display: "flex", flexWrap: "wrap", gap: 12, padding: "8px 12px", background: "#001000", color: "#ffffff", fontSize: 10 }} aria-label="Canaux FGB actifs">
       <span>Essais FGB actifs · avant validation BCH :</span>
       {channels.length ? channels.map(channel => <span key={channel.channel} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}

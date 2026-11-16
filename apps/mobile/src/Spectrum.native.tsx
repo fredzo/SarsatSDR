@@ -46,14 +46,15 @@ function Waterfall({ frame, width, speed }: { frame: WaterfallFrame | null; widt
   </Canvas>;
 }
 
-export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed }: {
+export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative }: {
   line: SpectrumEvent | null; epoch: number; floor: number; range: number; average: number;
-  channels: AcquisitionChannel[]; centerHz: number; speed: number;
+  channels: AcquisitionChannel[]; centerHz: number; speed: number; automatic: boolean; calibrationDb: number; relative: boolean;
 }) {
   const [width, setWidth] = useState(0);
   const [trace, setTrace] = useState<number[]>([]);
   const [frame, setFrame] = useState<WaterfallFrame | null>(null);
   const [error, setError] = useState("");
+  const [noiseFloor, setNoiseFloor] = useState<number | null>(null);
   const arrivedAt = useRef(-Infinity);
   const latest = useRef<SpectrumEvent | null>(null);
   const markerLevels = useRef(new Map<number, { frequency: number; raw: number; level: number }>());
@@ -80,14 +81,16 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     setError(!waterfallShader ? "Compilation shader waterfall impossible" : "");
     setFrame(null);
     setTrace([]);
+    setNoiseFloor(null);
   }, [epoch]);
-  useEffect(() => { history.current?.recolor(floor, range); upload(); }, [floor, range, epoch]);
+  useEffect(() => { history.current?.recolor(floor, range, calibrationDb, automatic); upload(); }, [floor, range, calibrationDb, automatic, epoch]);
 
   useEffect(() => {
     if (!line || line === latest.current) return;
     latest.current = line;
     const averaged = averageSpectrum(line, trace, average);
-    history.current?.push(averaged);
+    history.current?.push(averaged, line.timeSeconds);
+    setNoiseFloor(history.current?.noiseFloorDb ?? null);
     arrivedAt.current = performance.now();
     setTrace(averaged);
     upload();
@@ -118,15 +121,15 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
   const spectrum = useMemo(() => {
     const path = Skia.PathBuilder.Make();
     trace.forEach((value, n) => {
-      const x = abscissa((n + .5) / BINS), y = ordinate(value);
+      const x = abscissa((n + .5) / BINS), y = ordinate(value <= -240 ? value : value + calibrationDb);
       if (n === 0) path.moveTo(x, y); else path.lineTo(x, y);
     });
     return path.detach();
-  }, [trace, width]);
+  }, [trace, width, calibrationDb]);
 
   return <View style={styles.scope} accessibilityLabel="Spectre et waterfall 406 a 406,100 MHz">
     <View style={styles.title}><Text style={styles.titleText}>FFT  406.000 — 406.100 MHz</Text>
-      <Text style={styles.titleText}>Niveau relatif · non calibree en dBm</Text></View>
+      <Text style={styles.titleText}>{relative ? "Niveau relatif · WAV" : `dBm estimes · correction ${calibrationDb.toFixed(1)} dB`}</Text></View>
     <View onLayout={(event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width)}>
       <Canvas style={{ width: "100%", height: FFT_HEIGHT, backgroundColor: "#001000" }}>
         <Path path={grid} style="stroke" color="#335555" strokeWidth={1}><DashPathEffect intervals={[3, 3]} /></Path>
@@ -139,8 +142,10 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
           : <SkiaText x={55} y={30} text="En attente d'un flux I/Q reel" font={font} color="#99baba" />}
         {trace.length > 0 && channels.map(channel => {
           const frequency = centerHz + channel.frequencyOffsetHz;
-          const level = markerLevels.current.get(channel.channel)?.level;
-          if (level === undefined || frequency < 406000000 || frequency > 406100000 || level < -150 || level > -70) return null;
+          const held = markerLevels.current.get(channel.channel)?.level;
+          if (held === undefined) return null;
+          const level = held + calibrationDb;
+          if (frequency < 406000000 || frequency > 406100000 || level < -150 || level > -70) return null;
           return <Circle key={channel.channel} cx={abscissa((frequency - 406000000) / 100000)} cy={ordinate(level)} r={5}
             color={candidateColors[channel.channel]} />;
         })}
@@ -154,6 +159,10 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     <View style={styles.foot}>{["406.000 MHz", "406.050 MHz", "406.100 MHz"].map(text =>
       <Text key={text} style={styles.footText}>{text}</Text>)}</View>
+    <Text style={[styles.legendText, { paddingHorizontal: 12, paddingVertical: 6 }]}>
+      {automatic ? `WF Auto · bruit ${noiseFloor === null ? "—" : (noiseFloor + calibrationDb).toFixed(1)} ${relative ? "dB relatifs" : "dBm"} · 3 dB/couleur`
+        : "WF Manuel · Base plus haute = fond plus sombre ; Range plus haut = contraste plus faible"}
+    </Text>
     <View style={styles.legend} accessibilityLabel="Canaux FGB actifs">
       <Text style={styles.legendText}>Essais FGB actifs · avant validation BCH :</Text>
       {channels.length ? channels.map(channel => <View key={channel.channel} style={styles.legendItem}>

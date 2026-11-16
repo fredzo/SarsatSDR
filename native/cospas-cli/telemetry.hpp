@@ -12,7 +12,7 @@ namespace cospas::cli {
 class Spectrum {
 public:
     using Line = std::array<float, 1024>;
-    using Callback = std::function<void(const Line&, double)>;
+    using Callback = std::function<void(const Line&, double, float)>;
     Spectrum(std::uint32_t rate, double source_center_hz, Callback callback, double dsp_center_hz = 406050000);
     ~Spectrum();
     void push(std::span<const std::complex<float>> input);

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { averageSpectrum, waterfallIndex, WaterfallBuffer, waterfallBins, waterfallRows } from "@sarsat/shared/spectrum-display";
+import { averageSpectrum, waterfallIndex, automaticWaterfallIndex, WaterfallBuffer, waterfallBins, waterfallRows } from "@sarsat/shared/spectrum-display";
 import { nativeEventSchema, type SpectrumEvent } from "@sarsat/shared/protocol";
 
 test("Waterfall uses discrete thresholds and round-to-even", () => {
@@ -15,13 +15,47 @@ test("Waterfall uses discrete thresholds and round-to-even", () => {
 
 test("Display applies native display offset before averaging, without coloring unavailable frequencies", () => {
   const line: SpectrumEvent = { type: "spectrum", timeSeconds: .1, startHz: 406000000,
-    binWidthHz: 97.65625, displayOffsetDb: -80, dbfs: Array<number | null>(1024).fill(-60) };
+    binWidthHz: 97.65625, displayOffsetDb: -80, fullBandwidthDbm: null, dbfs: Array<number | null>(1024).fill(-60) };
   line.dbfs[0] = null;
   const first = averageSpectrum(line, [], .5);
   assert.equal(first[1], -140);
   const next = averageSpectrum(line, Array<number>(1024).fill(-150), .9);
   assert.equal(next[1], -141);
   assert.equal(waterfallIndex(next[0], 27, 11), 0);
+});
+
+test("Manual calibration recolors existing history without coloring missing bins", () => {
+  const buffer = new WaterfallBuffer();
+  const levels = Array<number>(waterfallBins).fill(-140);
+  levels[0] = -240;
+  buffer.push(levels);
+  buffer.recolor(27, 11, 7);
+  assert.deepEqual([...buffer.pixels.subarray(0, 4)], [0, 0, 0, 255]);
+  assert.deepEqual([...buffer.pixels.subarray(4, 8)], [240, 236, 0, 255]);
+  assert.equal(buffer.head, 1);
+  assert.equal(buffer.levels[1], -140);
+  buffer.recolor(27, 11, 100);
+  assert.deepEqual([...buffer.pixels.subarray(waterfallBins * 4, waterfallBins * 4 + 4)], [0, 0, 0, 255]);
+});
+
+test("Automatic waterfall keeps quiet noise dark and does not track a broadband frame away", () => {
+  const buffer = new WaterfallBuffer();
+  buffer.recolor(27, 11, 0, true);
+  const noise = Array.from({ length: waterfallBins }, (_, n) => -141 + n % 3);
+  buffer.push(noise, .1);
+  const floor = buffer.noiseFloorDb!;
+  for (const value of noise) assert.ok(automaticWaterfallIndex(value, floor) <= 1);
+  assert.equal(automaticWaterfallIndex(floor + 6, floor), 2);
+  const burst = noise.map(value => value + 18);
+  for (let n = 2; n <= 8; ++n) buffer.push(burst, n / 10);
+  assert.ok(buffer.noiseFloorDb! - floor <= .15, "A short broadband burst must not become the estimated noise floor");
+  assert.deepEqual([...buffer.pixels.subarray(waterfallBins * 4, waterfallBins * 4 + 4)], [219, 43, 40, 255]);
+  buffer.push(noise, .9);
+  const before = buffer.pixels.slice();
+  buffer.recolor(27, 11, 20, true);
+  assert.deepEqual(buffer.pixels, before, "RF calibration must not change relative automatic contrast");
+  buffer.recolor(27, 11);
+  assert.deepEqual([...buffer.pixels.subarray(0, 4)], [1, 217, 63, 255], "Manual mode restores the absolute palette");
 });
 
 test("Waterfall updates one ring row at a time and wraps without losing older lines", () => {

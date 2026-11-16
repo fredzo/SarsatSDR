@@ -76,11 +76,11 @@ function Select({ label, value, onChange, items, disabled }: { label: string; va
       dropdownIconColor="#00ffff" style={{ minWidth: 220, color: "#ffffff", backgroundColor: "#001a1a" }}>
       {items.map(item => <Picker.Item key={item.value} label={item.label} value={item.value} color="#ffffff" style={{ backgroundColor: "#001a1a" }} />)}</Picker></View></View>;
 }
-function Range({ label, value, min, max, step, onChange, digits = 0 }: { label: string; value: number; min: number; max: number;
-  step: number; onChange: (value: number) => void; digits?: number }) {
-  return <View style={s.range}><Text style={s.small}>{label}</Text>
+function Range({ label, value, min, max, step, onChange, digits = 0, disabled }: { label: string; value: number; min: number; max: number;
+  step: number; onChange: (value: number) => void; digits?: number; disabled?: boolean }) {
+  return <View style={[s.range, disabled && { opacity: .5 }]}><Text style={s.small}>{label}</Text>
     <Slider accessibilityLabel={label} style={{ width: 160, height: 36 }} minimumValue={min} maximumValue={max} step={step} value={value}
-      onValueChange={onChange} minimumTrackTintColor="#00ffff" maximumTrackTintColor="#335555" thumbTintColor="#3fe6e6" />
+      disabled={disabled} onValueChange={onChange} minimumTrackTintColor="#00ffff" maximumTrackTintColor="#335555" thumbTintColor="#3fe6e6" />
     <Text style={[s.small, s.mono]}>{value.toFixed(digits)}</Text></View>;
 }
 function Badge({ text, tone }: { text: string; tone: "valid" | "invalid" | "corrected" }) {
@@ -169,6 +169,8 @@ export default function App() {
   const [preroll, setPreroll] = useState(0);
   const [base, setBase] = useState(27);
   const [range, setRange] = useState(11);
+  const [waterfallAutomatic, setWaterfallAutomatic] = useState(true);
+  const [calibrationDb, setCalibrationDb] = useState(0);
   const [average, setAverage] = useState(.5);
   const [waterfallSpeed, setWaterfallSpeed] = useState(1);
   const [transport, setTransport] = useState<Transport | null>(null);
@@ -321,11 +323,13 @@ export default function App() {
             : <Text style={s.p}>Mode manuel : parametres DSP de Settings, retrait DC et prechauffage ci-dessus.</Text>}
           <Text style={s.p}>Lecture temps reel ; arret puis relance depuis debut. Pas encore d'enregistrement ni de recherche temporelle.</Text></View>}
         <Spectrum line={line} channels={channels} centerHz={session?.centerHz ?? center * 1e6}
-          epoch={epoch} floor={base} range={range} average={average} speed={waterfallSpeed} />
+          epoch={epoch} floor={base} range={range} average={average} speed={waterfallSpeed}
+          automatic={waterfallAutomatic} calibrationDb={session?.source === "rtl" ? calibrationDb : 0} relative={session?.source === "sample"} />
         <View style={s.displayControls}>
           <Range label="FFT Average" value={average} min={.01} max={.99} step={.01} onChange={setAverage} digits={2} />
-          <Range label="WF Base" value={base} min={0} max={100} step={1} onChange={setBase} />
-          <Range label="WF Range" value={range} min={0} max={100} step={1} onChange={setRange} />
+          <Check label="WF Auto" value={waterfallAutomatic} onChange={setWaterfallAutomatic} />
+          <Range label="WF Base" value={base} min={0} max={100} step={1} onChange={setBase} disabled={waterfallAutomatic} />
+          <Range label="WF Range" value={range} min={0} max={100} step={1} onChange={setRange} disabled={waterfallAutomatic} />
           <Range label="WF Vitesse · x" value={waterfallSpeed} min={.25} max={4} step={.25}
             onChange={setWaterfallSpeed} digits={2} />
         </View>
@@ -335,7 +339,9 @@ export default function App() {
           <Metric title="SGB ACQUISITION" rows={[["Detection max.", d?.sgbMaxDetectionLevel.toFixed(2) ?? "—"],
             ["Candidats", String(d?.sgbCandidates ?? "—")], ["Rejets qualite / BCH", d ? `${d.sgbQualityRejections} / ${d.sgbBchRejections}` : "—"]]} />
           <Metric title="RF FRONTEND" rows={[["Preset actif", String(metrics?.gainIndex ?? "—")],
-            ["I ecretes", String(metrics?.clippedSamples ?? "—")], ["Puissance", "Non calibree · dBFS"]]} />
+            ["I ecretes", String(metrics?.clippedSamples ?? "—")],
+            ["Full BW", line?.fullBandwidthDbm == null ? "—" : `${(line.fullBandwidthDbm + calibrationDb).toFixed(1)} dBm`],
+            ["Calibration RTL", `${calibrationDb.toFixed(1)} dB`]]} />
         </View>
       </View>}
 
@@ -396,6 +402,7 @@ export default function App() {
                   label: `${value.vendorId.toString(16).padStart(4, "0")}:${value.productId.toString(16).padStart(4, "0")} · bus ${value.bus}, adresse ${value.address}` }))]} />
             <NumberField style={s.setting} label="Preset initial explicite · 0–11" value={gain} disabled={busy} onChange={setGain} />
             <View style={s.setting}><Check label="FE_AGC" value={agc} disabled={busy} onChange={setAgc} /></View>
+            <NumberField style={s.setting} label="Calibration RTL · dB" value={calibrationDb} onChange={setCalibrationDb} />
             {numericSettings.map(field => <NumberField key={field.key} style={s.setting} label={field.label} disabled={busy || !settings}
               value={settings?.[field.key]} onChange={value => change(field.key, Math.min(field.max ?? Infinity, Math.max(field.min ?? 0, value)))} />)}
             <Select label="PRN alignment" value={String(settings?.prnAlignment ?? 2)} disabled={busy || !settings}
@@ -410,7 +417,11 @@ export default function App() {
         <Text style={s.p}>Defauts DSP lus depuis API C. Gain initial 8 : choix explicite de cette UI.
           Search Depth : {((settings?.searchDepth ?? 9) * 1.2 / 9).toFixed(1)} kHz de part et d'autre.
           Reglages utilises en reception RTL-SDR et en lecture WAV manuelle ; le profil capture du player reste independant.
-          Reglages geles pendant session ; arreter avant modification. Pas de calibration dBm ni de sauvegarde INI.</Text>
+          Reglages DSP geles pendant session ; arreter avant modification. Pas de sauvegarde INI.</Text>
+        <Text style={s.p}>Calibration RTL : correction additive de l'affichage FFT et Full BW, sans effet sur le decodeur.
+          Avec une source RF connue, entrer niveau connu moins niveau affiche. Valeur initiale 0 dB ; ajuster pour chaque cle.
+          Sans mesure etalon, les dBm restent estimes. Les WAV n'ont pas de puissance RF connue et restent relatifs.
+          WF Auto suit lentement le bruit ; le desactiver pour retrouver Base/Range manuels.</Text>
       </View>}
     </ScrollView>
     <View style={s.statusbar}><View style={s.row}><Led tone={connected ? "green" : undefined} /><Text style={s.status}>{transport?.label ?? "—"}</Text></View>

@@ -131,6 +131,7 @@ Defauts DSP :
 | Search Depth | 9, indices -9..+9 par pas de 150 Hz |
 | Gain initial UI / FE_AGC | preset 8 / actif |
 | FFT Average / WF Base / WF Range | 0,5 / 27 / 11 |
+| WF Auto / calibration RTL | actif / 0 dB |
 
 La limite SGB de rejet est distincte de la capacite mathematique de six corrections.
 `Afficher BCH invalides / hors seuil` conserve explicitement les echecs et affiche
@@ -138,9 +139,23 @@ La limite SGB de rejet est distincte de la capacite mathematique de six correcti
 Le Search Depth est affiche suivant l'echelle `position * 1,2 / 9` kHz.
 
 La FFT utilise une demi-fenetre Blackman doublee, la reponse des deux FIR
-et le maximum des bins par pixel. Les niveaux sont indicatifs, non calibres en dBm.
-La couleur est `Round((Round(niveau) + 180) * (100 - Range) / 600 - Base / 10)`,
-saturee entre 0 et 6, arrondi au pair. Base/Range recolorent aussi l'historique.
+et le maximum des bins par pixel. En RTL, le niveau tient compte du preset de
+gain actif, y compris sous FE_AGC. `Calibration RTL · dB` dans Settings ajoute
+une correction a la FFT, aux marqueurs et a Full BW, sans modifier le decodeur.
+Pour l'etalonner, entrer niveau RF connu moins niveau affiche ; la correction
+est propre a la cle et n'est pas encore sauvegardee. Sans source etalon, les
+dBm sont des estimations. Les WAV restent relatifs, sans mesure Full BW en dBm.
+Full BW integre l'energie FFT sur les 115,2 kHz du recepteur, avec correction
+de fenetre et de gain ; ce n'est pas la somme des maxima affiches.
+
+WF Auto, actif par defaut, estime le bruit dans la partie centrale du spectre :
+quartile bas et montee limitee a 0,2 dB/s pour ne pas suivre les trames courtes.
+Le bruit reste noir/violet ; chaque couleur ajoute 3 dB, soit 18 dB jusqu'au
+rouge. La calibration RF ne change pas ce contraste relatif.
+Desactiver WF Auto reactive Base/Range, dont les valeurs sont conservees.
+En manuel, la couleur est `Round((Round(niveau) + 180) * (100 - Range) / 600 - Base / 10)`,
+saturee entre 0 et 6, arrondi au pair. Augmenter Base assombrit le fond ;
+augmenter Range diminue le contraste. Reglages et calibration recolorent aussi l'historique.
 Les points FFT indiquent des essais FGB avant BCH, pas des trames validees.
 
 Dans Player, choisir une capture puis `LIRE`. Le profil valide, actif par
@@ -177,7 +192,9 @@ Le JSON de trame contient bits bruts/corriges, BCH et nombres de corrections,
 
 Le centre decode est distinct du centre tuner : decalage DSP par defaut -70 kHz,
 NCO apres le FIR55 et avant le FIR104, avec compensation de l'erreur PLL.
-`--events` active JSONL : session, spectrum, metrics, frame et complete.
+`--events` active JSONL : session, spectrum, acquisition, metrics, frame et complete.
+`spectrum.fullBandwidthDbm` est une estimation RTL avant correction utilisateur,
+ou `null` en lecture WAV et en l'absence d'energie mesurable.
 `--events --continuous --control-stdin` retire la borne de duree de reception ;
 `stop` suivi d'un saut de ligne, ou la fermeture du pipe, demande un arret ordonne.
 `decode --events --realtime` cadence le WAV sans changer ses bits.
@@ -228,7 +245,7 @@ Les tests UI verifient notamment les neuf lectures temps reel via JSONL.
 ## Limites et distribution
 
 Enregistrement I/Q, pause/recherche temporelle, sauvegarde des reglages,
-calibration dBm, integrations iOS et sources reseau/SigMF restent a completer.
+integrations iOS et sources reseau/SigMF restent a completer.
 Les WAV sont encore charges en entier ; la reception USB utilise des files bornees.
 Les regressions sur captures ne remplacent pas des mesures RF de sensibilite,
 de faux positifs et d'endurance.

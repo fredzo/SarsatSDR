@@ -26,7 +26,7 @@ struct Spectrum::Impl {
     Impl(std::uint32_t sample_rate, double frequency, Callback sink, double dsp_center)
         : rate(sample_rate), center(frequency), callback(std::move(sink)),
           size(std::bit_ceil(static_cast<unsigned>(std::ceil(double(rate) / 56.25)))),
-          ring(size), input(size), output(size), window(size), response_db(size) {
+          ring(size), input(size), output(size), window(size), response_db(size), bandwidth_response(size) {
         for (std::size_t n = 0; n < size / 2; ++n) {
             const double phase = 4 * std::numbers::pi * double(n) / double(size);
             window[n] = static_cast<float>(2 * (.42 - .5 * std::cos(phase) + .08 * std::cos(2 * phase)));
@@ -43,6 +43,8 @@ struct Spectrum::Impl {
             const double gain = response(dsp_tables::rtl_frontend_fir_1, offset, 921600) *
                 response(dsp_tables::rtl_frontend_fir_2, center + offset - dsp_center, 460800);
             response_db[n] = float(20 * std::log10(std::max(1e-12, gain)));
+            if (std::abs(center + offset - dsp_center) < 57600)
+                bandwidth_response[n] = float(gain * gain);
         }
         plan = fftwf_plan_dft_1d(static_cast<int>(size),
             reinterpret_cast<fftwf_complex*>(input.data()), reinterpret_cast<fftwf_complex*>(output.data()),
@@ -55,7 +57,7 @@ struct Spectrum::Impl {
     Callback callback;
     std::size_t size;
     std::vector<std::complex<float>> ring, input, output;
-    std::vector<float> window, response_db;
+    std::vector<float> window, response_db, bandwidth_response;
     float window_sum{};
     fftwf_plan plan{};
     std::uint64_t received{};
@@ -82,6 +84,13 @@ void Spectrum::sample(std::complex<float> value) {
     for (std::size_t n = 0; n < s.size; ++n)
         s.input[n] = s.ring[std::size_t((s.received + n) % s.size)] * s.window[n];
     fftwf_execute(s.plan);
+    double bandwidth_power = 0;
+    for (std::size_t n = 0; n < s.size; ++n)
+        bandwidth_power += double(std::norm(s.output[n])) * s.bandwidth_response[n];
+    // Integrated FFT energy, with the fixed 2048-bin bandwidth/window correction.
+    const float bandwidth_level = bandwidth_power > 0
+        ? float(10 * std::log10(bandwidth_power / (double(s.window_sum) * s.window_sum * 2048)) + 27)
+        : std::numeric_limits<float>::quiet_NaN();
     Line line{};
     for (std::size_t n = 0; n < line.size(); ++n) {
         const double offset = 406000000 + (double(n) + .5) * 100000 / double(line.size()) - s.center;
@@ -101,7 +110,7 @@ void Spectrum::sample(std::complex<float> value) {
             line[n] = std::max(line[n], level);
         }
     }
-    s.callback(line, double(s.received) / s.rate);
+    s.callback(line, double(s.received) / s.rate, bandwidth_level);
 }
 
 float spectrum_display_offset_db(std::size_t gain_index) {

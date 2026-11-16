@@ -140,11 +140,16 @@ void emit_acquisition(const cs_result* result) {
     emit_acquisition(acquisition);
 }
 
-void emit_spectrum(const cospas::cli::Spectrum::Line& line, double time, std::size_t gain_index = 0) {
+void emit_spectrum(const cospas::cli::Spectrum::Line& line, double time, std::size_t gain_index = 0,
+                   float bandwidth_level = std::numeric_limits<float>::quiet_NaN()) {
     if (time <= 0) return;
     std::cout << std::setprecision(8) << "{\"type\":\"spectrum\",\"timeSeconds\":" << time
               << ",\"startHz\":406000000,\"binWidthHz\":97.65625,\"displayOffsetDb\":"
-              << cospas::cli::spectrum_display_offset_db(gain_index) << ",\"dbfs\":[";
+              << cospas::cli::spectrum_display_offset_db(gain_index) << ",\"fullBandwidthDbm\":";
+    if (std::isfinite(bandwidth_level))
+        std::cout << bandwidth_level + cospas::cli::spectrum_display_offset_db(gain_index);
+    else std::cout << "null";
+    std::cout << ",\"dbfs\":[";
     for (std::size_t n = 0; n < line.size(); ++n) {
         if (n) std::cout << ',';
         if (std::isfinite(line[n])) std::cout << line[n];
@@ -330,7 +335,9 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
     std::unique_ptr<cospas::cli::Spectrum> spectrum;
     if (events) spectrum = std::make_unique<cospas::cli::Spectrum>(
         cospas::rtl_sample_rate_hz, *status.actual_frequency_hz,
-        [&](const auto& line, double time) { emit_spectrum(line, time, spectrum_gain); }, frequency);
+        [&](const auto& line, double time, float bandwidth_level) {
+            emit_spectrum(line, time, spectrum_gain, bandwidth_level);
+        }, frequency);
     std::unique_ptr<cs_worker, decltype(&cs_worker_destroy)> worker(nullptr, cs_worker_destroy);
     cs_diagnostics diagnostics{};
     cs_worker_stats snapshot{};
@@ -641,7 +648,7 @@ int cospas_cli_run(int argc, char** argv) {
         if (events) {
             if (!block_samples) block_samples = signal.sample_rate_hz / 10;
             spectrum = std::make_unique<cospas::cli::Spectrum>(signal.sample_rate_hz, 406050000,
-                [&](const auto& line, double time) { emit_spectrum(line, time - double(noise_preroll_ms) / 1000); });
+                [&](const auto& line, double time, float) { emit_spectrum(line, time - double(noise_preroll_ms) / 1000); });
             std::cout << "{\"type\":\"session\",\"source\":\"sample\",\"sampleRateHz\":" << signal.sample_rate_hz
                       << ",\"centerHz\":406050000,\"durationSeconds\":" << double(original_samples) / signal.sample_rate_hz
                       << ",\"noisePrerollMs\":" << noise_preroll_ms

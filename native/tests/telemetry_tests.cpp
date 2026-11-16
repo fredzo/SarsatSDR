@@ -9,7 +9,7 @@
 int main() {
     try {
         std::size_t lines = 0;
-        cospas::cli::Spectrum spectrum(921600, 406120000, [&](const auto& line, double time) {
+        cospas::cli::Spectrum spectrum(921600, 406120000, [&](const auto& line, double time, float bandwidth) {
             ++lines;
             if (std::abs(time - double(lines) / 10) > 1e-10)
                 throw std::runtime_error("Spectrum cadence is not 10 Hz");
@@ -18,6 +18,9 @@ int main() {
             // Coherent full-scale tone: frontend FIRs attenuate this bin by 0.726167 dB.
             if (std::abs(frequency - 406050081.25) > 50 || std::abs(*peak + .726167f) > .03f)
                 throw std::runtime_error("Spectrum peak pooling or dBFS normalization is incorrect: " + std::to_string(*peak));
+            const auto expected = 10 * std::log10(.6092 / (.42 * .42)) + 27 - 10 * std::log10(2048) - .726167;
+            if (std::abs(bandwidth - expected) > .03)
+                throw std::runtime_error("Full-band FFT energy/window normalization is incorrect: " + std::to_string(bandwidth));
         });
         std::vector<std::complex<float>> input(921600 / 2);
         for (std::size_t n = 0; n < input.size(); ++n) {
@@ -39,6 +42,26 @@ int main() {
         try { cospas::cli::spectrum_display_offset_db(12); }
         catch (const std::invalid_argument&) { rejected = true; }
         if (!rejected) throw std::runtime_error("Invalid gain index accepted");
+        std::size_t blank_lines = 0;
+        cospas::cli::Spectrum blank(115200, 406050000, [&](const auto&, double, float bandwidth) {
+            ++blank_lines;
+            if (std::isfinite(bandwidth))
+                throw std::runtime_error("Zero-energy input must not invent an RF power reading");
+        });
+        blank.push(std::vector<std::complex<float>>(11520));
+        if (blank_lines != 1) throw std::runtime_error("Missing blank spectrum");
+        std::size_t outside_lines = 0;
+        cospas::cli::Spectrum outside(921600, 406120000, [&](const auto&, double, float bandwidth) {
+            ++outside_lines;
+            if (bandwidth > -90)
+                throw std::runtime_error("Full-band power includes a tone outside the 115.2 kHz receive bandwidth");
+        });
+        for (std::size_t n = 0; n < input.size(); ++n) {
+            const double phase = -5343.75 * 2 * std::numbers::pi * double(n) / 921600;
+            input[n] = {static_cast<float>(std::cos(phase)), static_cast<float>(std::sin(phase))};
+        }
+        outside.push(input);
+        if (outside_lines != 5) throw std::runtime_error("Missing out-of-band spectra");
         std::cout << "Native UI spectrum: 10 Hz, 1024 bins, RF mapping and dBFS verified\n";
         return 0;
     } catch (const std::exception& error) {

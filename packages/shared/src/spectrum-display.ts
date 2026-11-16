@@ -12,6 +12,12 @@ export class WaterfallBuffer {
   head = 0;
   private base = 27;
   private range = 11;
+  private calibration = 0;
+  private automatic = false;
+  private noiseFloor: number | null = null;
+  private time: number | null = null;
+
+  get noiseFloorDb() { return this.noiseFloor; }
 
   constructor() {
     for (let n = 3; n < this.pixels.length; n += 4) this.pixels[n] = 255;
@@ -20,7 +26,11 @@ export class WaterfallBuffer {
   private colorRow(row: number) {
     const offset = row * waterfallBins;
     for (let n = 0; n < waterfallBins; ++n) {
-      const color = waterfallColors[waterfallIndex(this.levels[offset + n], this.base, this.range)];
+      const level = this.levels[offset + n];
+      const index = this.automatic && this.noiseFloor !== null
+        ? automaticWaterfallIndex(level, this.noiseFloor)
+        : waterfallIndex(level <= -240 ? level : level + this.calibration, this.base, this.range);
+      const color = waterfallColors[index];
       const pixel = (offset + n) * 4;
       this.pixels[pixel] = color[0];
       this.pixels[pixel + 1] = color[1];
@@ -28,7 +38,18 @@ export class WaterfallBuffer {
     }
   }
 
-  push(values: ArrayLike<number>) {
+  push(values: ArrayLike<number>, timeSeconds = (this.time ?? 0) + .1) {
+    const noise = Array.from(values).slice(waterfallBins / 4, waterfallBins * 3 / 4)
+      .filter(value => Number.isFinite(value) && value > -240).sort((a, b) => a - b);
+    if (noise.length) {
+      const measured = noise[Math.floor(noise.length / 4)];
+      const elapsed = this.time === null ? 0 : Math.max(0, Math.min(1, timeSeconds - this.time));
+      if (this.noiseFloor === null) this.noiseFloor = measured;
+      else if (measured < this.noiseFloor) this.noiseFloor += Math.min(1, elapsed / .5) * (measured - this.noiseFloor);
+      // Slow upward tracking keeps a short broadband burst above the noise estimate.
+      else this.noiseFloor += Math.min(measured - this.noiseFloor, elapsed * .2);
+    }
+    this.time = timeSeconds;
     const row = this.head;
     this.levels.set(values, row * waterfallBins);
     this.colorRow(row);
@@ -36,9 +57,11 @@ export class WaterfallBuffer {
     return row;
   }
 
-  recolor(base: number, range: number) {
+  recolor(base: number, range: number, calibration = 0, automatic = false) {
     this.base = base;
     this.range = range;
+    this.calibration = calibration;
+    this.automatic = automatic;
     for (let row = 0; row < waterfallRows; ++row) this.colorRow(row);
   }
 }
@@ -49,8 +72,14 @@ function roundEven(value: number) {
 }
 
 export function waterfallIndex(level: number, base: number, range: number) {
+  if (!Number.isFinite(level) || level <= -240) return 0;
   // Two round-to-even operations precede the seven-color lookup.
   return Math.max(0, Math.min(6, roundEven((roundEven(level) + 180) * (100 - range) / 600 - base / 10)));
+}
+
+export function automaticWaterfallIndex(level: number, noiseFloor: number) {
+  if (!Number.isFinite(level) || level <= -240) return 0;
+  return Math.max(0, Math.min(6, roundEven((roundEven(level) - roundEven(noiseFloor)) / 3)));
 }
 
 export function averageSpectrum(line: SpectrumEvent, previous: number[], coefficient: number) {

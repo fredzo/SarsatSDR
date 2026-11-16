@@ -66,7 +66,7 @@ export const nativeEventSchema = z.discriminatedUnion("type", [
     centerHz: finite, durationSeconds: finite.nonnegative().nullable(), noisePrerollMs: finite.optional(),
     label: z.string().optional() }),
   z.object({ type: z.literal("spectrum"), timeSeconds: finite, startHz: finite, binWidthHz: finite.positive(),
-    displayOffsetDb: finite, dbfs: z.array(finite.nullable()).length(1024) }),
+    displayOffsetDb: finite, fullBandwidthDbm: finite.nullable(), dbfs: z.array(finite.nullable()).length(1024) }),
   z.object({ type: z.literal("acquisition"), channels: z.array(acquisitionChannelSchema).max(4)
     .refine(channels => new Set(channels.map(channel => channel.channel)).size === channels.length,
       "Canal FGB duplique") }),

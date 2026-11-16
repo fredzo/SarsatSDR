@@ -128,6 +128,7 @@ test("Native JSONL supplies real spectra, decoded sample bits and bounded ENG tr
   for (let n = 0; n < spectra.length; n++) {
     assert.ok(Math.abs(spectra[n].timeSeconds - (n + 1) / 10) < 1e-6);
     assert.equal(spectra[n].dbfs.length, 1024);
+    assert.equal(spectra[n].fullBandwidthDbm, null, "A WAV without tuner gain must not claim RF power");
     assert.ok(spectra[n].dbfs.some(value => value !== null && value > -100));
   }
   const expected = [...(await readFile(resolve(root, "samples", "sgb.md"), "utf8"))
