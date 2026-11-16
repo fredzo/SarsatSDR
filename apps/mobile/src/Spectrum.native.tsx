@@ -5,6 +5,7 @@ import { AlphaType, Canvas, Circle, ColorType, DashPathEffect, Fill, FilterMode,
 import type { SpectrumEvent, AcquisitionChannel } from "@sarsat/shared/protocol";
 import { candidateColors, averageSpectrum, WaterfallBuffer, waterfallBins as BINS, waterfallRows as ROWS,
   waterfallLineMs, waterfallVisibleRows } from "@sarsat/shared/spectrum-display";
+import { SgbActivity } from "./SgbActivity";
 
 const FFT_HEIGHT = 230, WATERFALL_HEIGHT = 180;
 const font = matchFont({ fontFamily: "monospace", fontSize: 11 });
@@ -46,9 +47,10 @@ function Waterfall({ frame, width, speed }: { frame: WaterfallFrame | null; widt
   </Canvas>;
 }
 
-export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative }: {
+export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative, sgbDetections }: {
   line: SpectrumEvent | null; epoch: number; floor: number; range: number; average: number;
   channels: AcquisitionChannel[]; centerHz: number; speed: number; automatic: boolean; calibrationDb: number; relative: boolean;
+  sgbDetections: number;
 }) {
   const [width, setWidth] = useState(0);
   const [trace, setTrace] = useState<number[]>([]);
@@ -129,7 +131,8 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
 
   return <View style={styles.scope} accessibilityLabel="Spectre et waterfall 406 a 406,100 MHz">
     <View style={styles.title}><Text style={styles.titleText}>FFT  406.000 — 406.100 MHz</Text>
-      <Text style={styles.titleText}>{relative ? "Niveau relatif · WAV" : `dBm estimes · correction ${calibrationDb.toFixed(1)} dB`}</Text></View>
+      <SgbActivity detections={sgbDetections} />
+      <Text style={[styles.titleText, { textAlign: "right" }]}>{relative ? "Niveau relatif · WAV" : `dBm estimes · correction ${calibrationDb.toFixed(1)} dB`}</Text></View>
     <View onLayout={(event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width)}>
       <Canvas style={{ width: "100%", height: FFT_HEIGHT, backgroundColor: "#001000" }}>
         <Path path={grid} style="stroke" color="#335555" strokeWidth={1}><DashPathEffect intervals={[3, 3]} /></Path>
@@ -176,8 +179,8 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
 const mono = "monospace";
 const styles = StyleSheet.create({
   scope: { marginHorizontal: 18, backgroundColor: "#000", borderWidth: 1, borderColor: "#335555", borderRadius: 3, overflow: "hidden" },
-  title: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 9, paddingHorizontal: 12, backgroundColor: "#001000" },
-  titleText: { fontFamily: mono, fontSize: 10, color: "#00ffff" },
+  title: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 9, paddingHorizontal: 12, backgroundColor: "#001000" },
+  titleText: { flex: 1, fontFamily: mono, fontSize: 10, color: "#00ffff" },
   waterfallWrap: { flexDirection: "row", borderTopWidth: 1, borderTopColor: "#003333" },
   timeAxis: { width: 40, paddingVertical: 8, paddingHorizontal: 3, justifyContent: "space-between" },
   axisText: { color: "#99baba", fontFamily: mono, fontSize: 9 },

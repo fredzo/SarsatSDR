@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
   type TextStyle, type ViewStyle } from "react-native";
 import { Picker } from "@react-native-picker/picker";
@@ -156,6 +156,8 @@ export default function App() {
   const [selected, setSelected] = useState<number | null>(null);
   const [line, setLine] = useState<SpectrumEvent | null>(null);
   const [channels, setChannels] = useState<AcquisitionChannel[]>([]);
+  const [sgbDetections, setSgbDetections] = useState(0);
+  const previousSgbCandidates = useRef(0);
   const [metrics, setMetrics] = useState<{ samples: number; diagnostics: Diagnostics; gainIndex?: number; clippedSamples?: number } | null>(null);
   const [session, setSession] = useState<{ source: "rtl" | "sample"; centerHz: number; sampleRateHz: number; durationSeconds: number | null; noisePrerollMs?: number } | null>(null);
   const [epoch, setEpoch] = useState(0);
@@ -190,17 +192,24 @@ export default function App() {
       try {
         if (message.type === "status") {
           setStatus(message.status);
-          if (message.status === "idle") setChannels([]);
+          if (message.status === "idle") { setChannels([]); setSgbDetections(0); }
         }
         else if (message.type === "error") setError(message.message);
         else if (message.type === "session") {
           frameSource.label = message.label ?? (message.source === "rtl" ? "RTL-SDR" : "WAV I/Q");
           frameSource.centerHz = message.centerHz;
+          previousSgbCandidates.current = 0;
+          setSgbDetections(0);
           setSession(message); setLine(null); setChannels([]); setMetrics(null); setEpoch(value => value + 1);
         } else if (message.type === "spectrum") setLine(message);
         else if (message.type === "acquisition") setChannels(message.channels);
-        else if (message.type === "metrics") setMetrics(message);
-        else if (message.type === "complete") { setChannels([]); setMetrics(previous => ({
+        else if (message.type === "metrics") {
+          const candidates = message.diagnostics.sgbCandidates;
+          setSgbDetections(Math.max(0, candidates - previousSgbCandidates.current));
+          previousSgbCandidates.current = candidates;
+          setMetrics(message);
+        }
+        else if (message.type === "complete") { setChannels([]); setSgbDetections(0); setMetrics(previous => ({
           ...(previous ?? {}), samples: message.result.dspSamples ?? previous?.samples ?? 0,
           diagnostics: message.result.diagnostics,
         })); }
@@ -215,7 +224,7 @@ export default function App() {
     const created = createTransport({ event: handle, connection: (value, reason) => {
       if (!active) return;
       setConnected(value);
-      if (!value) { setChannels([]); if (reason) setError(reason); }
+      if (!value) { setChannels([]); setSgbDetections(0); if (reason) setError(reason); }
     } });
     setTransport(created);
     void refresh(created).catch(reason => { if (active) setError(String(reason)); });
@@ -324,6 +333,7 @@ export default function App() {
           <Text style={s.p}>Lecture temps reel ; arret puis relance depuis debut. Pas encore d'enregistrement ni de recherche temporelle.</Text></View>}
         <Spectrum line={line} channels={channels} centerHz={session?.centerHz ?? center * 1e6}
           epoch={epoch} floor={base} range={range} average={average} speed={waterfallSpeed}
+          sgbDetections={sgbDetections}
           automatic={waterfallAutomatic} calibrationDb={session?.source === "rtl" ? calibrationDb : 0} relative={session?.source === "sample"} />
         <View style={s.displayControls}>
           <Range label="FFT Average" value={average} min={.01} max={.99} step={.01} onChange={setAverage} digits={2} />

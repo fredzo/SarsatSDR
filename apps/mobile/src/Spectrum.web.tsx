@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { SpectrumEvent, AcquisitionChannel } from "@sarsat/shared/protocol";
 import { candidateColors, averageSpectrum, WaterfallBuffer, waterfallBins as BINS, waterfallRows as ROWS,
   waterfallLineMs, waterfallVisibleRows } from "@sarsat/shared/spectrum-display";
+import { SgbActivity } from "./SgbActivity";
 
 function shader(gl: WebGL2RenderingContext, type: number, source: string) {
   const result = gl.createShader(type);
@@ -16,9 +17,10 @@ function shader(gl: WebGL2RenderingContext, type: number, source: string) {
   return result;
 }
 
-export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative }: {
+export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative, sgbDetections }: {
   line: SpectrumEvent | null; epoch: number; floor: number; range: number; average: number;
   channels: AcquisitionChannel[]; centerHz: number; speed: number; automatic: boolean; calibrationDb: number; relative: boolean;
+  sgbDetections: number;
 }) {
   const fft = useRef<HTMLCanvasElement>(null);
   const waterfall = useRef<HTMLCanvasElement>(null);
@@ -207,9 +209,10 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
   const mono = "Consolas,monospace";
   return <section style={{ margin: "0 18px", background: "#000", border: "1px solid #335555", borderRadius: 3, overflow: "hidden" }}
     aria-label="Spectre et waterfall 406 a 406,100 MHz">
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 12px", font: `10px ${mono}`, background: "#001000", color: "#00ffff" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", padding: "9px 12px", font: `10px ${mono}`, background: "#001000", color: "#00ffff" }}>
       <span>FFT <b style={{ marginLeft: 10 }}>406.000 — 406.100 MHz</b></span>
-      <span>{relative ? "Niveau relatif · WAV" : `dBm estimes · correction ${calibrationDb.toFixed(1)} dB`}</span></div>
+      <SgbActivity detections={sgbDetections} />
+      <span style={{ textAlign: "right" }}>{relative ? "Niveau relatif · WAV" : `dBm estimes · correction ${calibrationDb.toFixed(1)} dB`}</span></div>
     <canvas ref={fft} style={{ display: "block", width: "100%", height: 230 }} aria-label="Spectre FFT mesure" />
     <div style={{ display: "flex", borderTop: "1px solid #003333" }}>
       <span style={{ width: 40, padding: "8px 3px", boxSizing: "border-box", color: "#99baba", font: `9px ${mono}`,
