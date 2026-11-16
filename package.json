@@ -1,0 +1,33 @@
+{
+  "name": "sarsat-sdr",
+  "version": "0.1.0",
+  "description": "SarsatSDR - reception RTL-SDR et decodage natif des balises COSPAS-SARSAT 406 MHz FGB/SGB",
+  "type": "commonjs",
+  "workspaces": ["apps/diagnostic-web", "apps/mobile", "packages/shared"],
+  "bin": {
+    "sarsat-decode": "dist/cli.js"
+  },
+  "scripts": {
+    "ui:dev": "npm run dev --workspace @sarsat/diagnostic-web",
+    "ui:build": "npm run build --workspace @sarsat/diagnostic-web && npm run build:web --workspace @sarsat/mobile",
+    "ui:start": "npm run start --workspace @sarsat/diagnostic-web",
+    "ui:test": "npm run test --workspace @sarsat/diagnostic-web",
+    "build": "tsc -p tsconfig.json",
+    "decode": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "esbuild@0.21.5": true
+  }
+}

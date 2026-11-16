@@ -1,0 +1,46 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'org.adrasec.f4jrx.sarsatsdr'
+version = '0.1.0'
+
+def repoRoot = file('../../../../..')
+
+android {
+  namespace "expo.modules.sarsatnative"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+    consumerProguardFiles 'consumer-rules.pro'
+    ndk {
+      abiFilters 'arm64-v8a', 'x86_64'
+    }
+    externalNativeBuild {
+      cmake {
+        arguments '-DANDROID_STL=c++_shared'
+      }
+    }
+  }
+  externalNativeBuild {
+    cmake {
+      path new File(repoRoot, 'native/android/CMakeLists.txt')
+      version '3.22.1'
+    }
+  }
+  sourceSets {
+    main {
+      assets.srcDirs += new File(buildDir, 'generated/sarsat-assets')
+    }
+  }
+}
+
+// Samples are copied under assets/samples so the app can replay them offline.
+def copySamples = tasks.register('copySarsatSamples', Copy) {
+  from(new File(repoRoot, 'samples')) {
+    include '*.wav', 'playback-profiles.json'
+  }
+  into new File(buildDir, 'generated/sarsat-assets/samples')
+}
+preBuild.dependsOn copySamples

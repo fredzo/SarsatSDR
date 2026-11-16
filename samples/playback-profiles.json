@@ -1,0 +1,47 @@
+{
+  "cnes-long-1.wav": {
+    "removeDc": true,
+    "noisePrerollMs": 2000,
+    "settings": { "fgb": true, "sgb": true, "fgbOverPeakDb": 15, "fgbAverage": 0.02 }
+  },
+  "cnes-short-1.wav": {
+    "removeDc": true,
+    "noisePrerollMs": 0,
+    "settings": { "fgb": false, "sgb": true }
+  },
+  "fgb-cnes-boost.wav": {
+    "removeDc": true,
+    "noisePrerollMs": 2000,
+    "settings": { "fgb": true, "sgb": false, "fgbOverPeakDb": 17.5, "fgbAverage": 0.02 }
+  },
+  "fgb-cnes.wav": {
+    "removeDc": true,
+    "noisePrerollMs": 2000,
+    "settings": { "fgb": true, "sgb": false, "fgbOverPeakDb": 6, "fgbAverage": 0.02, "fgbAlpha": 0.1, "fgbBeta": 0.01, "fgbZeta": 0.01 }
+  },
+  "fgb.wav": {
+    "removeDc": false,
+    "noisePrerollMs": 2000,
+    "settings": { "fgb": true, "sgb": false, "fgbOverPeakDb": 15, "fgbAverage": 0.02 }
+  },
+  "sgb-cnes-boost.wav": {
+    "removeDc": true,
+    "noisePrerollMs": 0,
+    "settings": { "fgb": false, "sgb": true }
+  },
+  "sgb-cnes.wav": {
+    "removeDc": true,
+    "noisePrerollMs": 0,
+    "settings": { "fgb": false, "sgb": true }
+  },
+  "sgb-self-test.wav": {
+    "removeDc": false,
+    "noisePrerollMs": 0,
+    "settings": { "fgb": false, "sgb": true }
+  },
+  "sgb.wav": {
+    "removeDc": false,
+    "noisePrerollMs": 0,
+    "settings": { "fgb": false, "sgb": true }
+  }
+}

@@ -1,0 +1,3 @@
+-keep class expo.modules.sarsatnative.NativeEngine { *; }
+-keep interface expo.modules.sarsatnative.NativeEngine$Sink { *; }
+-keep class * implements expo.modules.sarsatnative.NativeEngine$Sink { *; }

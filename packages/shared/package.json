@@ -1,0 +1,15 @@
+{
+  "name": "@sarsat/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./protocol": "./src/protocol.ts",
+    "./spectrum-display": "./src/spectrum-display.ts",
+    "./session-core": "./src/session-core.ts",
+    "./beacon-position": "./src/beacon-position.ts"
+  },
+  "dependencies": {
+    "zod": "^4.1.12"
+  }
+}
