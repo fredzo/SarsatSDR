@@ -407,7 +407,7 @@ export default function App() {
         <View style={s.row}>
           <Button icon={Usb} title="ACTUALISER USB" disabled={busy} onPress={() => { void refresh().catch(reason => setError(String(reason))); }} />
           <Button icon={RefreshCw} title="DEFAUTS MOTEUR NATIF" disabled={busy || !info} onPress={() => info && setSettings(info.settings)} /></View>
-        <Text style={s.p}>Defauts DSP lus depuis API C, sans copie du decodeur TypeScript abandonne. Gain initial 8 : choix explicite de cette UI.
+        <Text style={s.p}>Defauts DSP lus depuis API C. Gain initial 8 : choix explicite de cette UI.
           Search Depth : {((settings?.searchDepth ?? 9) * 1.2 / 9).toFixed(1)} kHz de part et d'autre.
           Reglages utilises en reception RTL-SDR et en lecture WAV manuelle ; le profil capture du player reste independant.
           Reglages geles pendant session ; arreter avant modification. Pas de calibration dBm ni de sauvegarde INI.</Text>

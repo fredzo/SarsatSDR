@@ -8,7 +8,6 @@
     "sarsat-decode": "dist/cli.js"
   },
   "scripts": {
-    "ui:dev": "npm run dev --workspace @sarsat/diagnostic-web",
     "ui:build": "npm run build --workspace @sarsat/diagnostic-web && npm run build:web --workspace @sarsat/mobile",
     "ui:start": "npm run start --workspace @sarsat/diagnostic-web",
     "ui:test": "npm run test --workspace @sarsat/diagnostic-web",

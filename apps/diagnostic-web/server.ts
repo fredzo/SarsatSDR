@@ -23,7 +23,6 @@ function send(socket: WebSocket, event: ServerEvent) {
 const samples = (await readdir(resolve(root, "samples"))).filter(name => name.endsWith(".wav")).sort();
 const session = new Session(resolve(root, "build", process.platform === "win32" ? "cospas-cli.exe" : "cospas-cli"),
   root, samples, event => { for (const client of clients) send(client, event); });
-const production = process.argv.includes("--production");
 const dist = resolve(root, "apps", "mobile", "dist");
 const server = createServer(async (request, response) => {
   try {
@@ -35,8 +34,6 @@ const server = createServer(async (request, response) => {
       response.setHeader("Content-Type", "application/json");
       response.setHeader("Cache-Control", "no-store");
       response.end(JSON.stringify(await session.info()));
-    } else if (vite) {
-      vite.middlewares(request, response, () => { response.writeHead(404).end("Not found"); });
     } else {
       const path = resolve(dist, "." + decodeURIComponent((request.url ?? "/").split("?")[0]));
       const base = dist;
@@ -56,9 +53,6 @@ const server = createServer(async (request, response) => {
     response.writeHead(500, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
   }
-});
-const vite = production ? null : await (await import("vite")).createServer({
-  root: app, server: { middlewareMode: true, hmr: { server } }, appType: "spa",
 });
 const sockets = new WebSocketServer({ noServer: true, maxPayload: 16384, perMessageDeflate: false });
 server.on("upgrade", (request, socket, head) => {
@@ -91,6 +85,5 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     for (const client of clients) client.close(1001, "Serveur arrete");
     server.close();
     sockets.close();
-    void vite?.close();
   });
 }

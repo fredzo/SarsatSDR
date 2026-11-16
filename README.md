@@ -40,7 +40,7 @@ icones Lucide et boutons de navigation cartographique bleus.
 - `native/cospas-cli` : executable headless et evenements JSONL.
 - `native/android` : compilation Android et adaptateur JNI.
 - `apps/mobile` : application Expo / React Native et interface Web partagee.
-- `apps/diagnostic-web` : pont Node.js/WebSocket local et tests UI.
+- `apps/diagnostic-web` : serveur HTTP/WebSocket local et tests UI, sans front distinct.
 - `packages/shared` : protocole, profils de lecture et affichage.
 - `samples` : captures de regression, attentes documentees et profils JSON.
 - `spec` : specifications FGB/SGB.
@@ -79,7 +79,7 @@ rtk proxy npm run ui:start
 
 Ouvrir **http://127.0.0.1:4173**. Le serveur ecoute seulement sur loopback ;
 `SARSAT_UI_PORT` change son port. La production sert `apps/mobile/dist`, meme
-interface que sur Android. `ui:dev` conserve le front Vite de diagnostic.
+interface que sur Android ; aucun ancien front de diagnostic n'est conserve.
 Le pont lance `build\cospas-cli.exe` et ne transporte aucun I/Q brut.
 
 ## Application Android
