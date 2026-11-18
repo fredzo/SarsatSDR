@@ -22,7 +22,7 @@ export function createTransport(handlers: TransportHandlers): Transport {
   }, samples, sample => picked.get(sample) ?? `${SarsatNative.samplesDirectory()}/${sample}`, handlers.event);
   setTimeout(() => handlers.connection(true), 0);
   return {
-    label: "Moteur natif embarque · Android",
+    label: "Embedded native engine · Android",
     async info() {
       const settings = settingsSchema.parse(JSON.parse(await SarsatNative.settings()));
       return infoSchema.parse({ settings, devices: SarsatNative.devices(), samples: samples(), status: core.status,
@@ -46,7 +46,7 @@ export function createTransport(handlers: TransportHandlers): Transport {
       const result = await DocumentPicker.getDocumentAsync({ type: ["audio/wav", "audio/x-wav", "audio/*"], copyToCacheDirectory: true });
       if (result.canceled || !result.assets[0]) return null;
       const asset = result.assets[0];
-      const name = `fichier/${asset.name}`.slice(0, 128);
+      const name = `file/${asset.name}`.slice(0, 128);
       picked.set(name, decodeURIComponent(asset.uri.replace(/^file:\/\//, "")));
       return name;
     },

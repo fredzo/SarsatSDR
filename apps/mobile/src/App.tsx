@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from "react";
 import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
   type TextStyle, type ViewStyle } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import Slider from "@react-native-community/slider";
 import Svg, { Path, Polyline } from "react-native-svg";
-import { Activity, Download, Eraser, FileAudio, FileText, FolderOpen, MapPin, MonitorUp, MonitorX,
+import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileText, FolderOpen, MapPin,
   Navigation, Play, BoomBox, RadioTower, RefreshCw, Settings as SettingsIcon, Square, Usb, type LucideIcon } from "lucide-react-native";
 import { startSchema, playbackConfiguration, type Frame, type Info, type Settings, type SpectrumEvent,
   type Diagnostics, type AcquisitionChannel, type ServerEvent } from "@sarsat/shared/protocol";
@@ -30,29 +30,29 @@ const numericSettings: { key: keyof Pick<Settings, "fgbAlpha" | "fgbBeta" | "fgb
   { key: "fgbZeta", label: "FGB PLL Zeta" },
   { key: "fgbAverage", label: "FGB Detection Average", max: 1 },
   { key: "fgbRuntimeMs", label: "FGB RunTime · ms", min: 1 },
-  { key: "fgbMaxErrors", label: "FGB BCH-1 erreurs max", max: 3 },
-  { key: "fgbBch2MaxErrors", label: "FGB BCH-2 erreurs max", max: 2 },
-  { key: "fgbHeaderErrors", label: "FGB en-tete erreurs max", max: 3 },
+  { key: "fgbMaxErrors", label: "FGB BCH-1 max errors", max: 3 },
+  { key: "fgbBch2MaxErrors", label: "FGB BCH-2 max errors", max: 2 },
+  { key: "fgbHeaderErrors", label: "FGB header max errors", max: 3 },
   { key: "sgbThreshold", label: "SGB Detection", max: 512 },
   { key: "sgbPhaseGain", label: "SGB PLL Alpha" },
   { key: "sgbFrequencyGain", label: "SGB PLL Beta" },
   { key: "sgbFilter", label: "SGB PLL TC", max: 1 },
   { key: "sgbFeedback", label: "SGB PLL FB" },
   { key: "searchDepth", label: "SGB Search Depth", min: 3, max: 9 },
-  { key: "sgbMaxErrors", label: "SGB BCH erreurs max", max: 6 },
+  { key: "sgbMaxErrors", label: "SGB BCH max errors", max: 6 },
 ];
 
 function Button({ title, onPress, disabled, kind, icon: Icon, backgroundColor, iconOnly }: { title: string; onPress: () => void; disabled?: boolean;
   iconOnly?: boolean;
-  kind?: "primary" | "stop" | "tab" | "tabActive" | "big"; icon?: LucideIcon; backgroundColor?: string }) {
-  const color = kind === "stop" ? "#ff8484" : kind === "tabActive" ? "#00ffff" : kind === "tab" ? "#98a3a3" : "#ffffff";
+  kind?: "primary" | "stop"; icon?: LucideIcon; backgroundColor?: string }) {
+  const color = kind === "stop" ? "#ff8484" : "#ffffff";
   return <Pressable accessibilityRole="button" accessibilityLabel={title}
-    accessibilityState={{ disabled, selected: kind === "tabActive" }} disabled={disabled} onPress={onPress}
-    style={({ pressed }) => [s.button, kind === "primary" && s.primary, kind === "tab" && s.tab, kind === "tabActive" && s.tabActive,
-      kind === "big" && s.big, iconOnly && s.iconButton, backgroundColor ? { backgroundColor, borderColor: backgroundColor } : undefined,
+    accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
+    style={({ pressed }) => [s.button, kind === "primary" && s.primary,
+      iconOnly && s.iconButton, backgroundColor ? { backgroundColor, borderColor: backgroundColor } : undefined,
       pressed && { opacity: .7 }, disabled && { opacity: .45 }]}>
-    {Icon && <Icon size={kind === "big" || iconOnly ? 26 : 20} color={color} />}
-    {!iconOnly && <Text style={[s.buttonText, { color }, (kind === "primary" || kind === "tabActive" || kind === "big") && { fontWeight: "600" }]}>{title}</Text>}
+    {Icon && <Icon size={iconOnly ? 26 : 20} color={color} />}
+    {!iconOnly && <Text style={[s.buttonText, { color }, kind === "primary" && { fontWeight: "600" }]}>{title}</Text>}
   </Pressable>;
 }
 function Check({ label, value, onChange, disabled }: { label: string; value: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
@@ -92,42 +92,33 @@ function bchBadges(frame: Frame) {
     const name = frame.generation === 2 ? "BCH" : `BCH${n + 1}`;
     const overLimit = n === 0 && frame.correctionLimit !== undefined &&
       bch.correctedErrors !== null && bch.correctedErrors > frame.correctionLimit;
-    const text = !bch.valid ? "FAIL" : overLimit ? `HORS SEUIL · ${bch.correctedErrors} bits`
-      : bch.correctedErrors ? `corrige ${bch.correctedErrors} bit${bch.correctedErrors > 1 ? "s" : ""}` : "OK";
+    const text = !bch.valid ? "FAIL" : overLimit ? `OVER LIMIT · ${bch.correctedErrors} bits`
+      : bch.correctedErrors ? `corrected ${bch.correctedErrors} bit${bch.correctedErrors > 1 ? "s" : ""}` : "OK";
     return <Badge key={n} text={`${name} ${text}`} tone={bch.valid && !overLimit ? bch.correctedErrors ? "corrected" : "valid" : "invalid"} />;
   });
 }
 function headerBadge(frame: Frame) {
   return frame.generation === 1 && frame.headerErrors ?
-    <Badge text={`EN-TETE ${frame.headerErrors} bit${frame.headerErrors > 1 ? "s" : ""} ecart`} tone="corrected" /> : null;
+    <Badge text={`HEADER ${frame.headerErrors} bit${frame.headerErrors > 1 ? "s" : ""} mismatch`} tone="corrected" /> : null;
 }
 const Badges = ({ children }: { children: ReactNode }) => <View style={s.badges}>{children}</View>;
-function FieldDetails({ frame }: { frame: Frame }) {
-  if (!frame.fields?.length) return null;
-  const sections = [...new Set(frame.fields.map(field => field.section))];
-  return <View style={s.fieldGrid}>{sections.map(section => <View key={section} style={s.fieldSection}>
-    <Text style={s.fieldTitle}>{section.toUpperCase()}</Text>
-    {frame.fields!.filter(field => field.section === section).map((field, n) =>
-      <View key={n} style={s.fieldRow}><Text style={s.fieldName}>{field.name}</Text><Text style={s.fieldValue}>{field.value}</Text></View>)}
-  </View>)}</View>;
-}
 function Trace({ title, trace }: { title: string; trace: NonNullable<Frame["traces"]>["phase"] | undefined }) {
-  if (!trace?.values.length) return <Text style={[s.empty, { padding: 25 }]}>{title} : aucune trace recue</Text>;
+  if (!trace?.values.length) return <Text style={[s.empty, { padding: 25 }]}>{title}: no trace received</Text>;
   const minimum = Math.min(...trace.values), maximum = Math.max(...trace.values);
   const span = Math.max(1e-6, maximum - minimum);
   const points = trace.values.map((value, n) =>
     `${n / Math.max(1, trace.values.length - 1) * 900},${130 - (value - minimum) / span * 115}`).join(" ");
   return <View style={s.trace}><View style={s.traceHeader}><Text style={s.traceText}>{title}</Text>
-    <Text style={[s.traceText, { fontSize: 10 }]}>{trace.count} points natifs · pas affiche {trace.stride}</Text></View>
+    <Text style={[s.traceText, { fontSize: 10 }]}>{trace.count} native points · display stride {trace.stride}</Text></View>
     <Svg width="100%" height={145} viewBox="0 0 900 145" preserveAspectRatio="none" accessibilityLabel={title}>
       <Path d="M0 72 H900 M450 0 V145" stroke="#003333" /><Polyline points={points} fill="none" stroke="#99ec80" strokeWidth={1} />
     </Svg><Text style={[s.traceText, s.mono, { padding: 5, paddingHorizontal: 12, fontSize: 10 }]}>{minimum.toPrecision(4)} … {maximum.toPrecision(4)}</Text></View>;
 }
 function Signal({ entry }: { entry: Entry | undefined }) {
     return <View style={s.panel}>
-      <Text style={s.h2}>Signal <Text style={s.h2Small}>Trame selectionnee dans Frames · derniere recue par defaut</Text></Text>
-      {!entry ? <Text style={[s.empty, { paddingVertical: 80 }]}>Aucune trame recue.</Text> : <>
-        <Text style={s.detail}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.source} · Reception : {entry.received}</Text>
+      <Text style={s.h2}>Signal <Text style={s.h2Small}>Selected frame · latest received by default</Text></Text>
+      {!entry ? <Text style={[s.empty, { paddingVertical: 80 }]}>No frames received.</Text> : <>
+        <Text style={s.detail}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.source} · Received: {entry.received}</Text>
         <Text selectable style={[s.mono, s.code]}>{entry.frame.correctedHex}</Text>
         <Text style={s.detail}>{frameMhz(entry)} MHz · t = {entry.frame.timeSeconds.toFixed(6)} s · Δf = {entry.frame.frequencyOffsetHz.toFixed(3)} Hz</Text>
         <Badges>{bchBadges(entry.frame)}{headerBadge(entry.frame)}</Badges>
@@ -136,9 +127,138 @@ function Signal({ entry }: { entry: Entry | undefined }) {
       </>}
     </View>;
 }
-function Receiver({ entry }: { entry: Entry | undefined }) {
-    return <View style={s.panel}>
-    </View>;
+function FrameTable({ entries, active, select, compact = false }: {
+  entries: Entry[]; active: Entry | undefined; select: (id: number) => void; compact?: boolean;
+}) {
+  const rows = useRef<ComponentRef<typeof ScrollView>>(null);
+  const layouts = useRef(new Map<number, { y: number; height: number }>());
+  const viewport = useRef({ y: 0, height: 0 });
+  const revealSelection = () => {
+    const layout = active && layouts.current.get(active.id);
+    if (!layout || !viewport.current.height) return;
+    const { y, height } = viewport.current;
+    const target = layout.y < y ? layout.y :
+      layout.y + layout.height > y + height ? layout.y + layout.height - height : y;
+    viewport.current.y = Math.max(0, target);
+    rows.current?.scrollTo({ y: viewport.current.y, animated: false });
+  };
+  useEffect(() => {
+    const ids = new Set(entries.map(entry => entry.id));
+    for (const id of layouts.current.keys()) if (!ids.has(id)) layouts.current.delete(id);
+    revealSelection();
+  }, [active?.id, entries]);
+  const headers = compact ? ["Received (local)", "Gen.", "MHz", "BCH"] :
+    ["Received (local)", "Source", "Gen.", "Mode", "Frequency · MHz", "Δf · Hz", "BCH", "Corrected frame"];
+  const widths = compact ? [118, 45, 93, 150] : columns;
+  return <View style={s.fill} accessibilityLabel="Received frames">
+    {!entries.length ? <View style={s.emptyPane}><Text style={s.emptyStrong}>No frames received</Text>
+      <Text style={s.empty}>Start the receiver or play an I/Q capture.</Text></View> :
+      <ScrollView horizontal style={s.fill} contentContainerStyle={{ minWidth: "100%" }}>
+        <View style={{ minWidth: "100%", flex: 1 }}>
+          <View style={[s.tr, s.th]}>{headers.map((name, n) =>
+            <Text key={name} style={[s.thText, { width: widths[n] }]}>{name}</Text>)}</View>
+          <ScrollView ref={rows} style={s.fill} nestedScrollEnabled accessibilityLabel="Frame rows"
+            onScroll={event => { viewport.current.y = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={16}
+            onLayout={event => { viewport.current.height = event.nativeEvent.layout.height; revealSelection(); }}
+            onContentSizeChange={revealSelection}>
+            {[...entries].reverse().map(entry => <Pressable key={entry.id} accessibilityRole="button"
+              accessibilityLabel={`Select frame ${entries.indexOf(entry) + 1}`}
+              accessibilityState={{ selected: active?.id === entry.id }} onPress={() => select(entry.id)}
+              onLayout={event => {
+                layouts.current.set(entry.id, event.nativeEvent.layout);
+                if (active?.id === entry.id) revealSelection();
+              }}
+              style={[s.tr, active?.id === entry.id && { backgroundColor: "#004444" }]}>
+              <Text style={[s.td, s.mono, { width: widths[0] }]}>
+                {new Date(entry.received).toLocaleDateString("en-GB")}{"\n"}
+                {new Date(entry.received).toLocaleTimeString("en-GB", { hour12: false })}.{entry.received.slice(20, 23)}
+              </Text>
+              {!compact && <Text style={[s.td, { width: columns[1] }]} numberOfLines={1}>{entry.source}</Text>}
+              <Text style={[s.td, { width: compact ? widths[1] : columns[2] }]}>{entry.frame.generation === 1 ? "FGB" : "SGB"}</Text>
+              {!compact && <View style={[s.cell, { width: columns[3] }]}><Text style={s.td}>{entry.frame.mode === "self_test" ? "SELF TEST" : "NORMAL"}</Text>{headerBadge(entry.frame)}</View>}
+              <Text style={[s.td, s.mono, { width: compact ? widths[2] : columns[4] }]}>{frameMhz(entry)}</Text>
+              {!compact && <Text style={[s.td, s.mono, { width: columns[5] }]}>{entry.frame.frequencyOffsetHz.toFixed(1)}</Text>}
+              <View style={[s.cell, { width: compact ? widths[3] : columns[6] }]}><Badges>{bchBadges(entry.frame)}</Badges></View>
+              {!compact && <Text style={[s.td, s.mono, { width: columns[7] }]}>{entry.frame.correctedHex}</Text>}
+            </Pressable>)}
+          </ScrollView>
+        </View>
+      </ScrollView>}
+  </View>;
+}
+function FrameDetail({ entry, compact = false }: { entry: Entry | undefined; compact?: boolean }) {
+  const [height, setHeight] = useState(0);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const fieldBudget = Math.max(0, Math.floor((height - headerHeight - 68) / 36));
+  const fields = entry?.frame.fields ?? [];
+  const priority = ["Hex ID", "Country", "Protocol", "Beacon Type", "Serial Number", "Latitude", "Longitude", "Emergency"];
+  const essential = [...fields].sort((a, b) => {
+    const rank = (name: string) => priority.includes(name) ? priority.indexOf(name) : priority.length;
+    return rank(a.name) - rank(b.name);
+  }).slice(0, fieldBudget);
+  const sections = [...new Set(fields.map(field => field.section))];
+  const content = <>
+    {!entry ? <><Text style={s.h3}>SELECTED FRAME</Text><Text style={s.empty}>No frame selected.</Text></> : <>
+      <View onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
+      <Text style={s.h3}>SELECTED FRAME</Text>
+      <View style={!compact && s.metadataGrid}>
+        <View style={!compact && s.metadataColumn}>
+          <Text style={s.detail}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.frame.mode === "self_test" ? "SELF TEST" : "NORMAL"}</Text>
+          <Text style={s.detail} numberOfLines={compact ? 1 : undefined}>{entry.source}</Text>
+          <Text style={[s.detail, s.mono]}>{frameMhz(entry)} MHz · {entry.frame.timeSeconds.toFixed(compact ? 3 : 6)} s</Text>
+        </View>
+        {!compact && <View style={s.metadataColumn}>
+          <Text style={s.detail}>Received: {entry.received}{"\n"}Δf: {entry.frame.frequencyOffsetHz.toFixed(3)} Hz</Text>
+          {entry.frame.correctionLimit !== undefined && <Text style={s.detail}>{entry.frame.generation === 1 ? "BCH-1" : "BCH"} correction limit: {entry.frame.correctionLimit}
+            {entry.frame.bch.length > 1 && entry.frame.bch2Limit !== undefined ? ` · BCH-2: ${entry.frame.bch2Limit}` : ""}</Text>}
+          {entry.frame.headerErrors !== undefined && <Text style={s.detail}>Header errors: {entry.frame.headerErrors}</Text>}
+        </View>}
+      </View>
+      <Badges>{bchBadges(entry.frame)}{headerBadge(entry.frame)}</Badges>
+      {!compact && <>
+        <Text style={s.detail}>Raw</Text><Text selectable style={[s.mono, s.code]}>{entry.frame.rawHex}</Text>
+      </>}
+      <Text style={s.detail}>Corrected</Text><Text selectable style={[s.mono, s.code]}>{entry.frame.correctedHex}</Text>
+      </View>
+      {compact ? <View style={{ marginTop: 8 }}>{essential.map((field, n) => <View key={n} style={s.fieldRow}>
+        <Text style={s.fieldName} numberOfLines={1}>{field.name}</Text>
+        <Text style={s.fieldValue} numberOfLines={2}>{field.value}</Text>
+      </View>)}</View> : <View style={s.fieldSections}>
+        {sections.map(section => <View key={section} style={s.fieldSection}>
+          <Text style={s.fieldSectionTitle}>{section}</Text>
+          {fields.filter(field => field.section === section).map((field, n) =>
+            <View key={n} style={s.fullFieldRow}>
+              <Text selectable style={s.fieldName}>{field.name}</Text>
+              <Text selectable style={s.fieldValue}>{field.value}</Text>
+            </View>)}
+        </View>)}
+      </View>}
+      {compact && fields.length > essential.length && <Text style={s.p}>Essential fields shown to fit this panel.</Text>}
+    </>}
+  </>;
+  return compact ? <View style={s.detailPane} accessibilityLabel="Selected frame details"
+    onLayout={event => setHeight(event.nativeEvent.layout.height)}>{content}</View> :
+    <ScrollView key={entry?.id} style={s.fill} contentContainerStyle={s.fullDetail}
+      accessibilityLabel="Selected frame details" nestedScrollEnabled>{content}</ScrollView>;
+}
+function MapPanel({ entry, compact = false }: { entry: Entry | undefined; compact?: boolean }) {
+  const position = entry && beaconPosition(entry.frame);
+  return <View style={s.mapPane} accessibilityLabel="Beacon map">
+    <Text style={s.h3}>MAP</Text>
+    {!entry || !position ? <View style={s.emptyPane}><Text style={s.empty}>No decoded beacon position.</Text></View> : <>
+      <Text style={[s.detail, s.mono]}>{position.lat.toFixed(6)}, {position.lon.toFixed(6)}</Text>
+      {!compact && <Text style={s.p}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.frame.correctedHex} · {entry.frame.timeSeconds.toFixed(3)} s</Text>}
+      <View style={[s.fill, { marginTop: 8 }]}><BeaconMap lat={position.lat} lon={position.lon} /></View>
+      <View style={[s.row, { marginTop: 8, flexWrap: "nowrap", gap: 6 }]}>
+        <Pressable accessibilityRole="link" accessibilityLabel="Google Maps" style={s.mapLink}
+          onPress={() => { void Linking.openURL(googleMapsUrl(position.lat, position.lon)); }}>
+          <MapPin size={18} color="#fff" /><Text style={s.mapLinkText}>Google Maps</Text></Pressable>
+        <Pressable accessibilityRole="link" accessibilityLabel="Waze" style={[s.mapLink, { backgroundColor: "#087899" }]}
+          onPress={() => { void Linking.openURL(wazeUrl(position.lat, position.lon)); }}>
+          <Navigation size={18} color="#fff" /><Text style={s.mapLinkText}>Waze</Text></Pressable>
+      </View>
+    </>}
+  </View>;
 }
 function Readout({ label, children }: { label: string; children: ReactNode }) {
   return <View style={s.readout}><Text style={s.readoutLabel}>{label}</Text><Text style={s.readoutValue} numberOfLines={1}>{children}</Text></View>;
@@ -228,12 +348,13 @@ export default function App() {
           diagnostics: message.result.diagnostics,
         })); }
         else if (message.type === "frame") {
-          if (!frameSource.label) throw new Error("Trame recue avant identification de sa source");
+          if (!frameSource.label) throw new Error("Frame received before its source was identified");
           const entry = { id: ++frameSource.sequence, frame: message.frame, received: new Date().toISOString(),
             source: frameSource.label, centerHz: frameSource.centerHz };
           setEntries(values => [...values.slice(-199), entry]);
+          setSelected(entry.id);
         }
-      } catch (reason) { setError(`Evenement UI invalide : ${reason instanceof Error ? reason.message : String(reason)}`); }
+      } catch (reason) { setError(`Invalid UI event: ${reason instanceof Error ? reason.message : String(reason)}`); }
     };
     const created = createTransport({ event: handle, connection: (value, reason) => {
       if (!active) return;
@@ -253,7 +374,7 @@ export default function App() {
   function start(source: "rtl" | "sample") {
     setError("");
     if (source === "sample" && useSampleProfile && !playback) {
-      setError("Aucun profil valide pour cette capture. Choisir le mode manuel pour utiliser Settings.");
+      setError("No validated profile for this capture. Select manual mode to use Settings.");
       return;
     }
     const location = device.split(":").map(Number);
@@ -294,12 +415,23 @@ export default function App() {
   const activeFrame = entries.find(entry => entry.id === selected) ?? entries.at(-1);
   const located = activeFrame && beaconPosition(activeFrame.frame) ? activeFrame
     : [...entries].reverse().find(entry => beaconPosition(entry.frame));
-  const position = located ? beaconPosition(located.frame) : null;
   const elapsed = session && metrics ? Math.max(0, metrics.samples / session.sampleRateHz - (session.noisePrerollMs ?? 0) / 1000) : 0;
   const d = metrics?.diagnostics;
   const decoderLocked = busy || !displayedSettings || (tab === "Player" && useSampleProfile);
   const duration = session?.durationSeconds ?? 1;
   const receiving = connected && status === "running";
+  const activeIndex = activeFrame ? entries.findIndex(entry => entry.id === activeFrame.id) : -1;
+  const [dashboardHeight, setDashboardHeight] = useState(0);
+  const spectrum = (compact = false) => <Spectrum line={line} channels={channels} centerHz={session?.centerHz ?? center * 1e6}
+    epoch={epoch} floor={base} range={range} average={average} speed={waterfallSpeed}
+    sgbDetections={sgbDetections} fgbDetections={fgbDetections} compact={compact}
+    height={compact ? Math.max(100, dashboardHeight * .52 - 12) : undefined}
+    automatic={waterfallAutomatic} calibrationDb={session?.source === "rtl" ? calibrationDb : 0} relative={session?.source === "sample"} />;
+  const frameActions = <View style={[s.row, { padding: 8 }]}>
+    <Text style={[s.h3, { flex: 1, marginBottom: 0 }]}>FRAMES ({entries.length})</Text>
+    <Button iconOnly icon={Eraser} title="Clear frames" onPress={() => { setEntries([]); setSelected(null); }} />
+    <Button iconOnly icon={Download} title="Export JSON" disabled={!entries.length} onPress={exportJson} />
+  </View>;
 
   return <View style={s.main}>
     <View style={s.titlebar}><View style={s.brand}><RadioTower size={28} color="#3fe6e6" /><Text style={s.brandStrong}>SarsatSDR</Text>
@@ -310,15 +442,41 @@ export default function App() {
         <View style={s.row}><Led tone={receiving ? "green" : undefined} />
           <Text numberOfLines={1} style={[s.connection, s.receivingLabel]}>{receiving ? "RECEIVING" : "STOPPED"}</Text></View>
         <Button iconOnly kind={busy ? "stop" : "primary"} icon={busy ? Square : Play}
-          backgroundColor={busy ? "#4a1616" : undefined} title={busy ? "Arreter la reception" : "Demarrer la reception"}
+          backgroundColor={busy ? "#4a1616" : undefined} title={busy ? "Stop reception" : "Start reception"}
           disabled={!connected || status === "starting" || status === "stopping" || (!busy && (!settings || !info?.devices.length))}
           onPress={toggleReceiver} />
       </View></View>
-    {!!error && <View accessibilityRole="alert" style={s.error}><Text style={s.errorText}><Text style={{ fontWeight: "bold" }}>ERREUR </Text>{error}</Text>
-      <Pressable accessibilityLabel="Fermer erreur" onPress={() => setError("")}><Text style={[s.errorText, { fontSize: 22 }]}>×</Text></Pressable></View>}
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
-      <View style={s.toolbar}>
-        <NumberField label="Centre · MHz" value={Number(center).toFixed(3)} onChange={setCenter} disabled={busy} big />
+    {!!error && <View accessibilityRole="alert" style={s.error}><Text style={s.errorText}><Text style={{ fontWeight: "bold" }}>ERROR </Text>{error}</Text>
+      <Pressable accessibilityLabel="Dismiss error" onPress={() => setError("")}><Text style={[s.errorText, { fontSize: 22 }]}>×</Text></Pressable></View>}
+    {tab === "Detection" && <View style={s.dashboard} onLayout={event => setDashboardHeight(event.nativeEvent.layout.height)}>
+      <View style={s.dashboardColumn}>
+        <View style={s.dashboardTop} accessibilityLabel="Detection spectrum">{spectrum(true)}</View>
+        <View style={s.dashboardBottom}>{frameActions}<FrameTable entries={entries} active={activeFrame} select={setSelected} compact /></View>
+      </View>
+      <View style={s.dashboardColumn}>
+        <View style={s.dashboardTop}><FrameDetail entry={activeFrame} compact /></View>
+        <View style={s.dashboardBottom}><MapPanel entry={located} compact /></View>
+      </View>
+    </View>}
+    {tab === "Frames" && <View style={s.split}>
+      <View style={[s.splitColumn, { flex: 2 }]}>{frameActions}<FrameTable entries={entries} active={activeFrame} select={setSelected} /></View>
+      <View style={[s.splitColumn, { flex: 3 }]}><FrameDetail entry={activeFrame} /></View>
+    </View>}
+    {tab === "Map" && <View style={s.fixedPage}><MapPanel entry={located} /></View>}
+    {(tab === "Receiver" || tab === "Player" || tab === "Signal" || tab === "Settings") &&
+    <ScrollView style={s.fill} contentContainerStyle={{ paddingBottom: 12 }}>
+      {(tab === "Receiver" || tab === "Player") && spectrum()}
+      {tab === "Receiver" && <>
+        <View style={s.displayControls}>
+          <Range label="FFT Average" value={average} min={.01} max={.99} step={.01} onChange={setAverage} digits={2} />
+          <Check label="WF Auto" value={waterfallAutomatic} onChange={setWaterfallAutomatic} />
+          <Range label="WF Base" value={base} min={0} max={100} step={1} onChange={setBase} disabled={waterfallAutomatic} />
+          <Range label="WF Range" value={range} min={0} max={100} step={1} onChange={setRange} disabled={waterfallAutomatic} />
+          <Range label={`WF Duration: ${(7 / waterfallSpeed).toFixed(1)} s · Speed`} value={waterfallSpeed} min={.25} max={4} step={.25}
+            onChange={setWaterfallSpeed} digits={2} />
+        </View>
+        <View style={s.toolbar}>
+        <NumberField label="Center · MHz" value={Number(center).toFixed(3)} onChange={setCenter} disabled={busy} big />
         <View style={[s.fieldset, decoderLocked && { opacity: .6 }]}><Text style={s.legend}>DECODERS</Text><View style={s.row}>
           <Check label="FGB" value={displayedSettings?.fgb ?? false} disabled={decoderLocked} onChange={value => change("fgb", value)} />
           <Check label="SGB" value={displayedSettings?.sgb ?? false} disabled={decoderLocked} onChange={value => change("sgb", value)} />
@@ -327,149 +485,108 @@ export default function App() {
         </View></View>
       </View>
       <View style={s.readouts}>
-        <Readout label="ETAT RECEPTEUR">{status.toUpperCase()}</Readout>
+        <Readout label="RECEIVER STATUS">{status.toUpperCase()}</Readout>
         <Readout label="SOURCE">{session ? session.source === "rtl" ? "RTL-SDR · USB" : "WAV I/Q" : "—"}</Readout>
-        <Readout label="TAUX I/Q">{session ? `${(session.sampleRateHz / 1000).toFixed(1)} kS/s` : "—"}</Readout>
-        <Readout label="ECHANTILLONS TRAITES">{metrics ? metrics.samples.toLocaleString("fr-FR") : "—"}</Readout>
-        <Readout label="TEMPS SOURCE">{elapsed.toFixed(1)} s</Readout>
-        <Readout label="TRAMES EN MEMOIRE">{entries.length} / 200</Readout>
+        <Readout label="I/Q RATE">{session ? `${(session.sampleRateHz / 1000).toFixed(1)} kS/s` : "—"}</Readout>
+        <Readout label="PROCESSED SAMPLES">{metrics ? metrics.samples.toLocaleString("en-US") : "—"}</Readout>
+        <Readout label="SOURCE TIME">{elapsed.toFixed(1)} s</Readout>
+        <Readout label="STORED FRAMES">{entries.length} / 200</Readout>
       </View>
-
-      {(tab === "Detection" || tab === "Player") && <View>
-        {tab === "Player" && <View style={s.panel}><Text style={s.h2}>Player <Text style={s.h2Small}>Lecture native des captures de regression</Text></Text>
-          <View style={s.row}>
-            <Select label="Capture WAV" disabled={busy} value={sample} onChange={setSample}
-              items={(info?.samples ?? []).map(name => ({ label: name, value: name }))} />
-            {transport?.pickFile && <Button icon={FolderOpen} title="OUVRIR WAV…" disabled={busy} onPress={() => { void pick(); }} />}
-            <Check label="Profil valide de la capture" value={useSampleProfile} disabled={busy} onChange={setUseSampleProfile} />
-            <Check label="Retrait DC explicite" value={useSampleProfile ? playback?.removeDc ?? false : removeDc}
-              disabled={busy || useSampleProfile} onChange={setRemoveDc} />
-            <NumberField label="Prechauffage · ms" disabled={busy || useSampleProfile}
-              value={useSampleProfile ? playback?.noisePrerollMs ?? 0 : preroll} onChange={setPreroll} />
-            <Button kind="primary" icon={Play} title="LIRE" disabled={busy || !connected || !settings} onPress={() => start("sample")} />
-            <Button icon={Square} title="STOP" disabled={!busy} onPress={stop} />
-          </View>
-          <View accessibilityLabel="Progression capture" style={s.progress}>
-            <View style={[s.progressBar, { width: `${Math.min(100, Math.min(elapsed, duration) / duration * 100)}%` }]} /></View>
-          {useSampleProfile ? playback ? <Text style={s.p}>Profil capture actif : {playback.settings.fgb ? "FGB" : ""}{playback.settings.fgb && playback.settings.sgb ? " + " : ""}{playback.settings.sgb ? "SGB" : ""}.
-            {playback.settings.fgb && ` OverPeak ${playback.settings.fgbOverPeakDb} dB ; moyenne ${playback.settings.fgbAverage} ; RunTime ${playback.settings.fgbRuntimeMs} ms ; Alpha ${playback.settings.fgbAlpha} ; Beta ${playback.settings.fgbBeta} ; Zeta ${playback.settings.fgbZeta} ; BCH-1 maximum ${playback.settings.fgbMaxErrors} erreurs ; BCH-2 maximum ${playback.settings.fgbBch2MaxErrors} erreurs ; en-tete maximum ${playback.settings.fgbHeaderErrors} erreurs.`}
-            {" "}Defauts natifs et adaptations validees du fichier ; reglages radio Settings inchanges.</Text>
-            : info ? <Text style={[s.p, { color: "#ff8484" }]}>Aucun profil valide pour cette capture. Selectionner le mode manuel.</Text>
-            : <Text style={s.p}>Chargement des profils de capture...</Text>
-            : <Text style={s.p}>Mode manuel : parametres DSP de Settings, retrait DC et prechauffage ci-dessus.</Text>}
-          <Text style={s.p}>Lecture temps reel ; arret puis relance depuis debut. Pas encore d'enregistrement ni de recherche temporelle.</Text></View>}
-        <Spectrum line={line} channels={channels} centerHz={session?.centerHz ?? center * 1e6}
-          epoch={epoch} floor={base} range={range} average={average} speed={waterfallSpeed}
-          sgbDetections={sgbDetections} fgbDetections={fgbDetections}
-          automatic={waterfallAutomatic} calibrationDb={session?.source === "rtl" ? calibrationDb : 0} relative={session?.source === "sample"} />
-        <View style={s.displayControls}>
-          <Range label="FFT Average" value={average} min={.01} max={.99} step={.01} onChange={setAverage} digits={2} />
-          <Check label="WF Auto" value={waterfallAutomatic} onChange={setWaterfallAutomatic} />
-          <Range label="WF Base" value={base} min={0} max={100} step={1} onChange={setBase} disabled={waterfallAutomatic} />
-          <Range label="WF Range" value={range} min={0} max={100} step={1} onChange={setRange} disabled={waterfallAutomatic} />
-          <Range label={`WF Duration: ${(7 / waterfallSpeed).toFixed(1).padStart(4, "0")} s     WF Speed`} value={waterfallSpeed} min={.25} max={4} step={.25}
-            onChange={setWaterfallSpeed} digits={2}/>
-        </View>
         <View style={s.metrics}>
           <Metric title="FGB ACQUISITION" rows={[["Peak / mean", `${d?.fgbMaxPeakDb.toFixed(2) ?? "—"} dB`],
-            ["Candidats", String(d?.fgbCandidates ?? "—")], ["Sync votes", `${d?.fgbMaxSyncVotes ?? "—"} / 16`]]} />
-          <Metric title="SGB ACQUISITION" rows={[["Detection max.", d?.sgbMaxDetectionLevel.toFixed(2) ?? "—"],
-            ["Candidats", String(d?.sgbCandidates ?? "—")], ["Rejets qualite / BCH", d ? `${d.sgbQualityRejections} / ${d.sgbBchRejections}` : "—"]]} />
-          <Metric title="RF FRONTEND" rows={[["Preset actif", String(metrics?.gainIndex ?? "—")],
-            ["I ecretes", String(metrics?.clippedSamples ?? "—")],
+            ["Candidates", String(d?.fgbCandidates ?? "—")], ["Sync votes", `${d?.fgbMaxSyncVotes ?? "—"} / 16`]]} />
+          <Metric title="SGB ACQUISITION" rows={[["Max detection", d?.sgbMaxDetectionLevel.toFixed(2) ?? "—"],
+            ["Candidates", String(d?.sgbCandidates ?? "—")], ["Quality / BCH rejects", d ? `${d.sgbQualityRejections} / ${d.sgbBchRejections}` : "—"]]} />
+          <Metric title="RF FRONTEND" rows={[["Active preset", String(metrics?.gainIndex ?? "—")],
+            ["Clipped I samples", String(metrics?.clippedSamples ?? "—")],
             ["Full BW", line?.fullBandwidthDbm == null ? "—" : `${(line.fullBandwidthDbm + calibrationDb).toFixed(1)} dBm`],
-            ["Calibration RTL", `${calibrationDb.toFixed(1)} dB`]]} />
+            ["RTL calibration", `${calibrationDb.toFixed(1)} dB`]]} />
         </View>
-      </View>}
-
-      {tab === "Frames" && <View style={s.panel}><View style={s.row}>
-        <Text style={[s.h2, { flex: 1, marginBottom: 0 }]}>Frames <Text style={s.h2Small}>Trames natives · brut et corrige</Text></Text>
-        <Button icon={Eraser} title="EFFACER" onPress={() => { setEntries([]); setSelected(null); }} />
-        <Button icon={Download} title="EXPORT JSON" disabled={!entries.length} onPress={exportJson} /></View>
-        {!entries.length ? <View style={{ paddingVertical: 80, alignItems: "center" }}><Text style={s.emptyStrong}>Aucune trame recue</Text>
-          <Text style={s.empty}>Demarrer reception RTL-SDR ou lecture d'une capture I/Q.</Text>
-          <Text style={[s.empty, { fontSize: 11 }]}>Aucune trame de demonstration n'est generee.</Text></View>
-          : <ScrollView horizontal style={{ marginTop: 18 }}><View>
-            <View style={[s.tr, s.th]}>{["Temps source", "Source", "Gen.", "Mode", "Frequence · MHz", "Δf · Hz", "BCH", "Trame corrigee"].map((name, n) =>
-              <Text key={name} style={[s.thText, { width: columns[n] }]}>{name}</Text>)}</View>
-            {[...entries].reverse().map(entry => <Pressable key={entry.id} onPress={() => setSelected(entry.id)}
-              style={[s.tr, activeFrame?.id === entry.id && { backgroundColor: "#004444" }]}>
-              <Text style={[s.td, s.link, { width: columns[0] }]}>{entry.frame.timeSeconds.toFixed(3)} s</Text>
-              <Text style={[s.td, { width: columns[1] }]} numberOfLines={1}>{entry.source}</Text>
-              <Text style={[s.td, { width: columns[2] }]}>{entry.frame.generation === 1 ? "FGB" : "SGB"}</Text>
-              <View style={[s.cell, { width: columns[3] }]}><Text style={s.td}>{entry.frame.mode === "self_test" ? "SELF TEST" : "NORMAL"}</Text>{headerBadge(entry.frame)}</View>
-              <Text style={[s.td, s.mono, { width: columns[4] }]}>{frameMhz(entry)}</Text>
-              <Text style={[s.td, s.mono, { width: columns[5] }]}>{entry.frame.frequencyOffsetHz.toFixed(1)}</Text>
-              <View style={[s.cell, { width: columns[6] }]}><Badges>{bchBadges(entry.frame)}</Badges></View>
-              <Text style={[s.td, s.mono, { width: columns[7] }]}>{entry.frame.correctedHex}</Text></Pressable>)}
-          </View></ScrollView>}
-        {activeFrame && <View style={s.frameDetail}><Text style={s.h3}>TRAME SELECTIONNEE</Text>
-          <Text style={s.detail}>Source : {activeFrame.source} · Reception : {activeFrame.received}</Text>
-          <Text style={s.detail}>Frequence : <Text style={[s.mono, { fontWeight: "bold" }]}>{frameMhz(activeFrame)} MHz</Text> · Δf = {activeFrame.frame.frequencyOffsetHz.toFixed(1)} Hz · t = {activeFrame.frame.timeSeconds.toFixed(3)} s</Text>
-          {activeFrame.frame.correctionLimit !== undefined && <Text style={s.detail}>Limite de correction {activeFrame.frame.generation === 1 ? "BCH-1 FGB" : "BCH SGB"} appliquee : {activeFrame.frame.correctionLimit}
-            {activeFrame.frame.bch.length > 1 && activeFrame.frame.bch2Limit !== undefined ? ` · BCH-2 FGB : ${activeFrame.frame.bch2Limit}` : ""}</Text>}
-          <Badges>{bchBadges(activeFrame.frame)}{headerBadge(activeFrame.frame)}</Badges>
-          <Text style={s.detail}>Brut</Text><Text selectable style={[s.mono, s.code]}>{activeFrame.frame.rawHex}</Text>
-          <Text style={s.detail}>Corrige</Text><Text selectable style={[s.mono, s.code]}>{activeFrame.frame.correctedHex}</Text>
-          <View style={s.row}><Button icon={Activity} title="Open Signal" onPress={() => setTab("Signal")} /></View>
-          <FieldDetails frame={activeFrame.frame} /></View>}
-      </View>}
-
-      {tab === "Map" && <View style={[s.panel, { minHeight: 520 }]}>
-        <Text style={s.h2}>MAP <Text style={s.h2Small}>Position balise · selection Frames ou derniere trame localisee</Text></Text>
-        {!located || !position ? <View style={{ paddingVertical: 80, alignItems: "center" }}><Text style={s.emptyStrong}>Aucune position balise</Text>
-          <Text style={s.empty}>Aucune trame recue ne contient de position decodee.</Text></View> : <>
-          <Text style={s.p}>{located.frame.generation === 1 ? "FGB" : "SGB"} · {located.frame.correctedHex} · t = {located.frame.timeSeconds.toFixed(3)} s ·
-            <Text style={[s.mono, { fontWeight: "bold" }]}> {position.lat.toFixed(6)}, {position.lon.toFixed(6)}</Text></Text>
-          <View style={{ height: 460 }}><BeaconMap lat={position.lat} lon={position.lon} /></View>
-          <View style={[s.row, { marginTop: 12 }]}>
-            <View style={{ flex: 1 }}><Button kind="big" icon={MapPin} backgroundColor="#4285F4" title="GOOGLE MAPS" onPress={() => { void Linking.openURL(googleMapsUrl(position.lat, position.lon)); }} /></View>
-            <View style={{ flex: 1 }}><Button kind="big" icon={Navigation} backgroundColor="#0DACE5" title="WAZE" onPress={() => { void Linking.openURL(wazeUrl(position.lat, position.lon)); }} /></View>
-          </View></>}
-      </View>}
+      </>}
+        {tab === "Player" && <View style={s.panel}><Text style={s.h2}>Player <Text style={s.h2Small}>Native I/Q capture playback</Text></Text>
+          <View style={s.row}>
+            <Select label="WAV capture" disabled={busy} value={sample} onChange={setSample}
+              items={(info?.samples ?? []).map(name => ({ label: name, value: name }))} />
+            {transport?.pickFile && <Button icon={FolderOpen} title="OPEN WAV…" disabled={busy} onPress={() => { void pick(); }} />}
+            <Check label="Validated capture profile" value={useSampleProfile} disabled={busy} onChange={setUseSampleProfile} />
+            <Check label="Explicit DC removal" value={useSampleProfile ? playback?.removeDc ?? false : removeDc}
+              disabled={busy || useSampleProfile} onChange={setRemoveDc} />
+            <NumberField label="Noise preroll · ms" disabled={busy || useSampleProfile}
+              value={useSampleProfile ? playback?.noisePrerollMs ?? 0 : preroll} onChange={setPreroll} />
+            <Button kind="primary" icon={Play} title="PLAY" disabled={busy || !connected || !settings} onPress={() => start("sample")} />
+            <Button icon={Square} title="STOP" disabled={!busy} onPress={stop} />
+          </View>
+          <View accessibilityLabel="Capture progress" style={s.progress}>
+            <View style={[s.progressBar, { width: `${Math.min(100, Math.min(elapsed, duration) / duration * 100)}%` }]} /></View>
+          {useSampleProfile ? playback ? <Text style={s.p}>Active profile: {playback.settings.fgb ? "FGB" : ""}{playback.settings.fgb && playback.settings.sgb ? " + " : ""}{playback.settings.sgb ? "SGB" : ""}.
+            {playback.settings.fgb && ` OverPeak ${playback.settings.fgbOverPeakDb} dB; average ${playback.settings.fgbAverage}; RunTime ${playback.settings.fgbRuntimeMs} ms; Alpha ${playback.settings.fgbAlpha}; Beta ${playback.settings.fgbBeta}; Zeta ${playback.settings.fgbZeta}; max BCH-1 errors ${playback.settings.fgbMaxErrors}; max BCH-2 errors ${playback.settings.fgbBch2MaxErrors}; max header errors ${playback.settings.fgbHeaderErrors}.`}
+            {" "}
+            Native defaults and validated capture adjustments; Receiver settings are unchanged.</Text>
+            : info ? <Text style={[s.p, { color: "#ff8484" }]}>No validated profile. Select manual mode.</Text>
+            : <Text style={s.p}>Loading capture profiles...</Text>
+            : <Text style={s.p}>Manual mode: DSP settings from Settings, DC removal and noise preroll above.</Text>}
+          <Text style={s.p}>Real-time playback; stop and restart from the beginning. Recording and seeking are not available yet.</Text></View>}
 
       {tab === "Signal" && <Signal entry={activeFrame} />}
 
-      {tab === "Receiver" && <Receiver entry={activeFrame} />}
-
-      {tab === "Settings" && <View style={s.panel}><Text style={s.h2}>Settings <Text style={s.h2Small}>Appliques au prochain demarrage</Text></Text>
-        <View style={s.fieldset}><Text style={s.legend}>RTL-SDR · 921600 echantillons complexes/s · Bias-T OFF</Text>
+      {tab === "Settings" && <View style={s.panel}><Text style={s.h2}>Settings <Text style={s.h2Small}>Applied on next start</Text></Text>
+        <View style={s.fieldset}><Text style={s.legend}>RTL-SDR · 921600 complex samples/s · Bias-T OFF</Text>
           <View style={s.settingsGrid}>
-            <Select label="Cle USB" value={device} onChange={setDevice} disabled={busy || !settings}
-              items={[{ label: info?.devices.length ? "Choisir une cle" : "Aucune cle detectee", value: "" },
+            <Select label="USB device" value={device} onChange={setDevice} disabled={busy || !settings}
+              items={[{ label: info?.devices.length ? "Select a device" : "No device detected", value: "" },
                 ...(info?.devices ?? []).map(value => ({ value: `${value.bus}:${value.address}`,
-                  label: `${value.vendorId.toString(16).padStart(4, "0")}:${value.productId.toString(16).padStart(4, "0")} · bus ${value.bus}, adresse ${value.address}` }))]} />
-            <NumberField style={s.setting} label="Preset initial explicite · 0–11" value={gain} disabled={busy} onChange={setGain} />
+                  label: `${value.vendorId.toString(16).padStart(4, "0")}:${value.productId.toString(16).padStart(4, "0")} · bus ${value.bus}, address ${value.address}` }))]} />
+            <NumberField style={s.setting} label="Initial gain preset · 0–11" value={gain} disabled={busy} onChange={setGain} />
             <View style={s.setting}><Check label="FE_AGC" value={agc} disabled={busy} onChange={setAgc} /></View>
-            <NumberField style={s.setting} label="Calibration RTL · dB" value={calibrationDb} onChange={setCalibrationDb} />
+            <NumberField style={s.setting} label="RTL calibration · dB" value={calibrationDb} onChange={setCalibrationDb} />
             {numericSettings.map(field => <NumberField key={field.key} style={s.setting} label={field.label} disabled={busy || !settings}
               value={settings?.[field.key]} onChange={value => change(field.key, Math.min(field.max ?? Infinity, Math.max(field.min ?? 0, value)))} />)}
             <Select label="PRN alignment" value={String(settings?.prnAlignment ?? 2)} disabled={busy || !settings}
               onChange={value => change("prnAlignment", Number(value))}
               items={[{ label: "Early", value: "0" }, { label: "Norm", value: "1" }, { label: "Late", value: "2" }]} />
             <View style={s.setting}><Check label="SGB Quality Check" value={settings?.qualityCheck ?? true} disabled={busy || !settings} onChange={value => change("qualityCheck", value)} /></View>
-            <View style={s.setting}><Check label="Afficher BCH invalides / hors seuil" value={settings?.showBchFailures ?? false} disabled={busy || !settings} onChange={value => change("showBchFailures", value)} /></View>
+            <View style={s.setting}><Check label="Show invalid / over-limit BCH" value={settings?.showBchFailures ?? false} disabled={busy || !settings} onChange={value => change("showBchFailures", value)} /></View>
           </View></View>
         <View style={s.row}>
-          <Button icon={Usb} title="ACTUALISER USB" disabled={busy} onPress={() => { void refresh().catch(reason => setError(String(reason))); }} />
-          <Button icon={RefreshCw} title="DEFAUTS MOTEUR NATIF" disabled={busy || !info} onPress={() => info && setSettings(info.settings)} /></View>
-        <Text style={s.p}>Defauts DSP lus depuis API C. Gain initial 8 : choix explicite de cette UI.
-          Search Depth : {((settings?.searchDepth ?? 9) * 1.2 / 9).toFixed(1)} kHz de part et d'autre.
-          Reglages utilises en reception RTL-SDR et en lecture WAV manuelle ; le profil capture du player reste independant.
-          Reglages DSP geles pendant session ; arreter avant modification. Pas de sauvegarde INI.</Text>
-        <Text style={s.p}>Calibration RTL : correction additive de l'affichage FFT et Full BW, sans effet sur le decodeur.
-          Avec une source RF connue, entrer niveau connu moins niveau affiche. Valeur initiale 0 dB ; ajuster pour chaque cle.
-          Sans mesure etalon, les dBm restent estimes. Les WAV n'ont pas de puissance RF connue et restent relatifs.
-          WF Auto suit lentement le bruit ; le desactiver pour retrouver Base/Range manuels.</Text>
+          <Button icon={Usb} title="REFRESH USB" disabled={busy} onPress={() => { void refresh().catch(reason => setError(String(reason))); }} />
+          <Button icon={RefreshCw} title="NATIVE DEFAULTS" disabled={busy || !info} onPress={() => info && setSettings(info.settings)} /></View>
+        <Text style={s.p}>DSP defaults are read from the C API. Initial gain preset: 8.
+          Search Depth: ±{((settings?.searchDepth ?? 9) * 1.2 / 9).toFixed(1)} kHz.
+          Settings apply to RTL-SDR reception and manual WAV playback; validated capture profiles are independent.
+          Stop the session before changing DSP settings. Settings are not saved yet.</Text>
+        <Text style={s.p}>RTL calibration adds an offset to FFT and Full BW without changing decoding.
+          With a known RF source, enter known level minus displayed level. Default: 0 dB; adjust for each device.
+          Without a calibrated source, dBm values are estimates. WAV levels remain relative.
+          WF Auto follows the noise floor slowly; disable it to use manual Base/Range.</Text>
       </View>}
-    </ScrollView>
-    <ScrollView horizontal style={s.nav} contentContainerStyle={s.navContent}>
-      {tabs.map(name => <Button key={name} kind={tab === name ? "tabActive" : "tab"} onPress={() => setTab(name)}
-        icon={tabIcons[name]} title={name === "Frames" ? `${name} (${entries.length})` : name} />)}</ScrollView>
+    </ScrollView>}
+    <View style={s.nav}>
+      {tabs.map(name => {
+        const Icon = tabIcons[name];
+        const arrow = (direction: -1 | 1) => <Pressable key={direction} accessibilityRole="button"
+          accessibilityLabel={direction === -1 ? "Previous frame" : "Next frame"}
+          disabled={activeIndex < 0 || activeIndex + direction < 0 || activeIndex + direction >= entries.length}
+          onPress={() => setSelected(entries[activeIndex + direction].id)}
+          style={[s.navArrow, (activeIndex < 0 || activeIndex + direction < 0 || activeIndex + direction >= entries.length) && { opacity: .3 }]}>
+          {direction === -1 ? <ChevronLeft size={22} color="#00ffff" /> : <ChevronRight size={22} color="#00ffff" />}
+        </Pressable>;
+        return <View key={name} style={[s.navItem, name === "Frames" && { flex: 1.8 }]}>
+          {name === "Frames" && arrow(-1)}
+          <Pressable accessibilityRole="tab" accessibilityState={{ selected: tab === name }}
+            accessibilityLabel={name === "Frames" ? `Frames (${activeIndex + 1}/${entries.length})` : name}
+            onPress={() => setTab(name)} style={[s.navTab, tab === name && s.navSelected]}>
+            <Icon size={22} color={tab === name ? "#00ffff" : "#98a3a3"} />
+            <Text style={[s.navLabel, tab === name && { color: "#00ffff" }]} numberOfLines={1}>
+              {name === "Frames" ? `Frames (${activeIndex + 1}/${entries.length})` : name}</Text>
+          </Pressable>
+          {name === "Frames" && arrow(1)}
+        </View>;
+      })}
+    </View>
   </View>;
 }
 
-const columns = [100, 140, 50, 170, 120, 80, 260, 300];
+const columns = [118, 140, 50, 170, 120, 80, 260, 300];
 const mono = Platform.select({ web: "Consolas,monospace", default: "monospace" });
 const s = StyleSheet.create({
   main: { flex: 1, backgroundColor: "#001000" },
@@ -479,16 +596,37 @@ const s = StyleSheet.create({
   brandSpan: { fontSize: 10, letterSpacing: 1.3, color: "#99baba" },
   connection: { fontSize: 10, color: "#ffffff", letterSpacing: .5 },
   receivingLabel: { width: 74, flexShrink: 0 },
-  nav: { flexGrow: 0, flexShrink: 0, backgroundColor: "#000000", borderTopWidth: 1, borderTopColor: "#003333" },
-  navContent: { flexGrow: 1, justifyContent: "space-around", gap: 4, paddingHorizontal: 12, paddingVertical: 7 },
+  fill: { flex: 1, minHeight: 0, minWidth: 0 },
+  dashboard: { flex: 1, minHeight: 0, flexDirection: "row", padding: 6, gap: 6 },
+  dashboardColumn: { flex: 1, minWidth: 0, minHeight: 0, gap: 6 },
+  dashboardTop: { flex: 1.08, minHeight: 0, overflow: "hidden", borderWidth: 1, borderColor: "#003333", borderRadius: 8 },
+  dashboardBottom: { flex: 1, minHeight: 0, overflow: "hidden", borderWidth: 1, borderColor: "#003333", borderRadius: 8 },
+  split: { flex: 1, minHeight: 0, flexDirection: "row", padding: 8, gap: 8 },
+  splitColumn: { flex: 1, minWidth: 0, minHeight: 0, borderWidth: 1, borderColor: "#003333", borderRadius: 8, overflow: "hidden" },
+  fixedPage: { flex: 1, minHeight: 0, padding: 8 },
+  detailPane: { flex: 1, minHeight: 0, padding: 10, backgroundColor: "#001a1a", overflow: "hidden" },
+  fullDetail: { padding: 10, backgroundColor: "#001a1a" },
+  metadataGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  metadataColumn: { flexBasis: 250, flexGrow: 1, minWidth: 0 },
+  fieldSections: { flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start", gap: 10, marginTop: 12 },
+  fieldSection: { flexBasis: 300, flexGrow: 1, minWidth: 0, borderWidth: 1, borderColor: "#003333", padding: 8 },
+  fieldSectionTitle: { fontSize: 11, fontWeight: "bold", color: "#00ffff", marginBottom: 6 },
+  fullFieldRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingVertical: 2, borderBottomWidth: 1, borderBottomColor: "#003333" },
+  mapPane: { flex: 1, minHeight: 0, padding: 10, backgroundColor: "#001a1a" },
+  emptyPane: { flex: 1, padding: 12, alignItems: "center", justifyContent: "center", gap: 8 },
+  mapLink: { flex: 1, minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, borderRadius: 8, backgroundColor: "#245cad" },
+  mapLinkText: { fontSize: 10, color: "#fff" },
+  nav: { flexDirection: "row", flexShrink: 0, backgroundColor: "#001a1a", borderTopWidth: 1, borderTopColor: "#335555", paddingVertical: 5, paddingHorizontal: 4, gap: 2 },
+  navItem: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center" },
+  navTab: { flex: 1, minWidth: 0, minHeight: 52, alignItems: "center", justifyContent: "center", gap: 3, borderRadius: 12 },
+  navSelected: { backgroundColor: "#004444" },
+  navLabel: { fontSize: 10, color: "#98a3a3" },
+  navArrow: { minWidth: 28, minHeight: 48, alignItems: "center", justifyContent: "center" },
   row: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 10 },
   button: { flexDirection: "row", gap: 8, borderWidth: 1, borderColor: "#335555", borderRadius: 12, paddingVertical: 10, paddingHorizontal: 16, backgroundColor: "#003333", minHeight: 48, justifyContent: "center", alignItems: "center" },
   buttonText: { color: "#ffffff", fontSize: 13 },
   iconButton: { width: 48, height: 48, minHeight: 48, borderRadius: 8, paddingHorizontal: 0, paddingVertical: 0 },
   primary: { backgroundColor: "#00885f", borderColor: "#00885f" },
-  tab: { backgroundColor: "#000000", borderColor: "#000000", borderRadius: 0, borderBottomWidth: 2 },
-  tabActive: { backgroundColor: "#002222", borderColor: "#002222", borderBottomColor: "#00ffff", borderRadius: 0, borderBottomWidth: 2 },
-  big: { minHeight: 52 },
   check: { flexDirection: "row", alignItems: "center", gap: 7, minHeight: 40 },
   box: { width: 20, height: 20, borderWidth: 1, borderColor: "#557777", borderRadius: 3, backgroundColor: "#001a1a", alignItems: "center", justifyContent: "center" },
   boxOn: { backgroundColor: "#00885f", borderColor: "#00885f" },
@@ -534,13 +672,9 @@ const s = StyleSheet.create({
   valid: { color: "#00ff00", backgroundColor: "#003000", borderColor: "#00885f" },
   invalid: { color: "#ff8484", backgroundColor: "#330f0f", borderColor: "#883333" },
   corrected: { color: "#ffdd66", backgroundColor: "#332600", borderColor: "#998500" },
-  frameDetail: { paddingTop: 22, marginTop: 15, borderTopWidth: 1, borderTopColor: "#335555", gap: 4 },
   detail: { fontSize: 11, color: "#99baba", marginTop: 4 },
   code: { fontSize: 12, color: "#ffffff" },
-  fieldGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 15 },
-  fieldSection: { flexGrow: 1, flexBasis: 300, borderWidth: 1, borderColor: "#335555", paddingVertical: 8, paddingHorizontal: 12 },
-  fieldTitle: { fontSize: 11, letterSpacing: .9, color: "#00ffff", fontWeight: "bold", marginBottom: 6 },
-  fieldRow: { flexDirection: "row", gap: 10, paddingVertical: 2, borderBottomWidth: 1, borderBottomColor: "#003333" },
+  fieldRow: { height: 36, flexDirection: "row", gap: 10, alignItems: "center", paddingVertical: 2, borderBottomWidth: 1, borderBottomColor: "#003333" },
   fieldName: { flexBasis: "45%", color: "#99baba", fontSize: 12 },
   fieldValue: { flex: 1, fontSize: 12, color: "#ffffff" },
   trace: { backgroundColor: "#001000", borderWidth: 1, borderColor: "#335555", marginVertical: 15 },

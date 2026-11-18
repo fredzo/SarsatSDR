@@ -18,8 +18,8 @@ const settingsFields = z.object({
   searchDepth: z.number().int().min(3).max(9),
   prnAlignment: z.number().int().min(0).max(2),
 });
-export const settingsSchema = settingsFields.refine(s => s.fgb || s.sgb, "Activer au moins un decodeur")
-  .refine(s => !s.sgb || s.normalPrn || s.testPrn, "Activer au moins un PRN");
+export const settingsSchema = settingsFields.refine(s => s.fgb || s.sgb, "Enable at least one decoder")
+  .refine(s => !s.sgb || s.normalPrn || s.testPrn, "Enable at least one PRN");
 export type Settings = z.infer<typeof settingsSchema>;
 
 const playbackProfileSchema = z.object({
@@ -69,7 +69,7 @@ export const nativeEventSchema = z.discriminatedUnion("type", [
     displayOffsetDb: finite, fullBandwidthDbm: finite.nullable(), dbfs: z.array(finite.nullable()).length(1024) }),
   z.object({ type: z.literal("acquisition"), channels: z.array(acquisitionChannelSchema).max(4)
     .refine(channels => new Set(channels.map(channel => channel.channel)).size === channels.length,
-      "Canal FGB duplique") }),
+      "Duplicate FGB channel") }),
   z.object({ type: z.literal("frame"), frame: frameSchema }),
   z.object({ type: z.literal("metrics"), samples: finite.nonnegative(), diagnostics: diagnosticsSchema,
     gainIndex: finite.optional(), clippedSamples: finite.optional() }),
@@ -92,7 +92,7 @@ export const startSchema = z.object({
   sample: z.string().max(128).optional(),
   removeDc: z.boolean(), noisePrerollMs: z.number().int().min(0).max(10000),
   settings: settingsSchema,
-}).refine(s => (s.bus === undefined) === (s.address === undefined), "Bus et adresse requis ensemble");
+}).refine(s => (s.bus === undefined) === (s.address === undefined), "Bus and address must be specified together");
 export const commandSchema = z.union([startSchema, z.object({ type: z.literal("stop") })]);
 export type StartCommand = z.infer<typeof startSchema>;
 

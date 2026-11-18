@@ -17,6 +17,7 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19,
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
 const marker = L.circleMarker([${lat}, ${lon}], { radius: 10, color: "#fff", weight: 3, fillColor: "#d4332a", fillOpacity: 1 }).addTo(map);
 window.moveBeacon = (lat, lon) => { marker.setLatLng([lat, lon]); map.setView([lat, lon], map.getZoom()); };
+new ResizeObserver(() => map.invalidateSize({ pan: false })).observe(document.getElementById("map"));
 </script></body></html>`;
 
 export function BeaconMap({ lat, lon }: { lat: number; lon: number }) {
@@ -24,5 +25,5 @@ export function BeaconMap({ lat, lon }: { lat: number; lon: number }) {
   const initial = useRef(html(lat, lon));
   useEffect(() => { view.current?.injectJavaScript(`window.moveBeacon && window.moveBeacon(${lat}, ${lon}); true;`); }, [lat, lon]);
   return <WebView ref={view} originWhitelist={["*"]} source={{ html: initial.current, baseUrl: "https://sarsat.local/" }}
-    style={{ flex: 1, minHeight: 360, backgroundColor: "#0d141d" }} />;
+    style={{ flex: 1, minHeight: 0, backgroundColor: "#0d141d" }} />;
 }

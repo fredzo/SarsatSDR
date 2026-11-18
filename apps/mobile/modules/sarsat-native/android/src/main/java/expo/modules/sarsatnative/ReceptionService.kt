@@ -17,14 +17,14 @@ class ReceptionService : Service() {
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val manager = getSystemService(NotificationManager::class.java)
-    manager.createNotificationChannel(NotificationChannel(CHANNEL, "Reception SARSAT", NotificationManager.IMPORTANCE_LOW))
+    manager.createNotificationChannel(NotificationChannel(CHANNEL, "SARSAT reception", NotificationManager.IMPORTANCE_LOW))
     val launch = packageManager.getLaunchIntentForPackage(packageName)
     val pending = launch?.let {
       android.app.PendingIntent.getActivity(this, 0, it, android.app.PendingIntent.FLAG_IMMUTABLE)
     }
     val notification = Notification.Builder(this, CHANNEL)
       .setContentTitle("SarsatSDR")
-      .setContentText("Reception RTL-SDR 406 MHz en cours")
+      .setContentText("Receiving RTL-SDR 406 MHz")
       .setSmallIcon(android.R.drawable.stat_sys_download)
       .setOngoing(true)
       .setContentIntent(pending)

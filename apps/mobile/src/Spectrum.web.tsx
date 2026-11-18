@@ -6,21 +6,22 @@ import { DetectionActivity } from "./DetectionActivity";
 
 function shader(gl: WebGL2RenderingContext, type: number, source: string) {
   const result = gl.createShader(type);
-  if (!result) throw new Error("Allocation shader waterfall impossible");
+  if (!result) throw new Error("Could not allocate waterfall shader");
   gl.shaderSource(result, source);
   gl.compileShader(result);
   if (!gl.getShaderParameter(result, gl.COMPILE_STATUS)) {
     const message = gl.getShaderInfoLog(result);
     gl.deleteShader(result);
-    throw new Error(`Shader waterfall : ${message}`);
+    throw new Error(`Waterfall shader: ${message}`);
   }
   return result;
 }
 
-export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative, sgbDetections, fgbDetections }: {
+export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative, sgbDetections, fgbDetections, compact = false, height }: {
   line: SpectrumEvent | null; epoch: number; floor: number; range: number; average: number;
   channels: AcquisitionChannel[]; centerHz: number; speed: number; automatic: boolean; calibrationDb: number; relative: boolean;
   sgbDetections: number; fgbDetections: number;
+  compact?: boolean; height?: number;
 }) {
   const fft = useRef<HTMLCanvasElement>(null);
   const waterfall = useRef<HTMLCanvasElement>(null);
@@ -41,7 +42,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     const canvas = waterfall.current;
     if (!canvas) return;
     const gl = canvas.getContext("webgl2", { antialias: false, alpha: false });
-    if (!gl) { setError("WebGL2 indisponible : waterfall non affiche."); return; }
+    if (!gl) { setError("WebGL2 unavailable: waterfall cannot be displayed."); return; }
     let program: WebGLProgram | null = null;
     let texture: WebGLTexture | null = null;
     const history = new WaterfallBuffer();
@@ -68,12 +69,12 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
           color = texelFetch(history, ivec2(int(min(${BINS - 1}.0, uv.x * ${BINS}.0)), row), 0);
         }`);
       program = gl.createProgram();
-      if (!program) throw new Error("Allocation programme waterfall impossible");
+      if (!program) throw new Error("Could not allocate waterfall program");
       gl.attachShader(program, vertex); gl.attachShader(program, fragment); gl.linkProgram(program);
       gl.deleteShader(vertex); gl.deleteShader(fragment);
       if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? "WebGL link failed");
       texture = gl.createTexture();
-      if (!texture) throw new Error("Allocation texture waterfall impossible");
+      if (!texture) throw new Error("Could not allocate waterfall texture");
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
@@ -141,7 +142,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
       canvas.width = Math.round(canvas.clientWidth * ratio);
       canvas.height = Math.round(canvas.clientHeight * ratio);
       const ctx = canvas.getContext("2d");
-      if (!ctx) { setError("Canvas 2D indisponible : spectre non affiche."); return; }
+      if (!ctx) { setError("Canvas 2D unavailable: spectrum cannot be displayed."); return; }
       ctx.scale(ratio, ratio);
       const width = canvas.clientWidth, height = canvas.clientHeight;
       ctx.fillStyle = "#001000"; ctx.fillRect(0, 0, width, height);
@@ -158,7 +159,8 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
         ctx.strokeStyle = "#335555";
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height - 19); ctx.stroke();
         ctx.fillStyle = "#99baba";
-        ctx.fillText((406 + n / 100).toFixed(3), Math.max(40, Math.min(width - 49, x - 20)), height - 4);
+        if (!compact || n % 5 === 0)
+          ctx.fillText((406 + n / 100).toFixed(3), Math.max(40, Math.min(width - 49, x - 20)), height - 4);
       }
       ctx.setLineDash([]);
       if (previous.current.length) {
@@ -182,7 +184,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
           ctx.fill();
         }
       } else {
-        ctx.fillStyle = "#99baba"; ctx.fillText("En attente d'un flux I/Q reel", 55, 30);
+        ctx.fillStyle = "#99baba"; ctx.fillText("Waiting for an I/Q stream", 55, 30);
       }
     };
     if (line && line !== latest.current) {
@@ -204,40 +206,40 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     draw();
     const observer = new ResizeObserver(draw); observer.observe(canvas);
     return () => observer.disconnect();
-  }, [line, channels, centerHz, average, calibrationDb, epoch]);
+  }, [line, channels, centerHz, average, calibrationDb, epoch, compact]);
 
   const mono = "Consolas,monospace";
-  return <section style={{ margin: "0 18px", background: "#000", border: "1px solid #335555", borderRadius: 3, overflow: "hidden" }}
-    aria-label="Spectre et waterfall 406 a 406,100 MHz">
-    <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", padding: "9px 12px", font: `10px ${mono}`, background: "#001000", color: "#00ffff" }}>
+  return <section style={{ margin: compact ? 0 : "0 18px", height: compact ? height : undefined, display: "flex", flexDirection: "column", background: "#000", border: "1px solid #335555", borderRadius: 3, overflow: "hidden" }}
+    aria-label="Spectrum and waterfall 406 to 406.100 MHz">
+    <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "1fr auto 1fr", gap: compact ? 4 : 0, alignItems: "center", justifyItems: compact ? "center" : undefined, padding: compact ? "5px 4px" : "9px 12px", font: `10px ${mono}`, background: "#001000", color: "#00ffff" }}>
       <span>FFT <b style={{ marginLeft: 10 }}>406.000 — 406.100 MHz</b></span>
       <div style={{ display: "flex" }}>
         <DetectionActivity generation="FGB" detections={fgbDetections} />
         <DetectionActivity generation="SGB" detections={sgbDetections} />
       </div>
-      <span style={{ textAlign: "right" }}>{relative ? "Niveau relatif · WAV" : `dBm estimes · correction ${calibrationDb.toFixed(1)} dB`}</span></div>
-    <canvas ref={fft} style={{ display: "block", width: "100%", height: 230 }} aria-label="Spectre FFT mesure" />
-    <div style={{ display: "flex", borderTop: "1px solid #003333" }}>
+      <span style={{ textAlign: "right" }}>{relative ? "Relative level · WAV" : `Estimated dBm · offset ${calibrationDb.toFixed(1)} dB`}</span></div>
+    <canvas ref={fft} style={{ display: "block", width: "100%", height: compact ? Math.max(70, ((height ?? 400) - 80) * .52) : 230, flexShrink: 0 }} aria-label="Measured FFT spectrum" />
+    <div style={{ display: "flex", flex: compact ? 1 : undefined, minHeight: 0, borderTop: "1px solid #003333" }}>
       <span style={{ width: 40, padding: "8px 3px", boxSizing: "border-box", color: "#99baba", font: `9px ${mono}`,
         display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
         <span>0 s</span><span>−{Number((7 / speed).toFixed(2))}s</span></span>
-      <canvas ref={waterfall} style={{ display: "block", width: "calc(100% - 48px)", height: 180 }}
-        aria-label={`Waterfall GPU, historique de ${(7 / speed).toFixed(2)} secondes`} />
+      <canvas ref={waterfall} style={{ display: "block", width: "calc(100% - 48px)", height: compact ? "100%" : 180, minHeight: 0 }}
+        aria-label={`GPU waterfall, ${(7 / speed).toFixed(2)} seconds of history`} />
     </div>
     {error && <p role="alert" style={{ background: "#330f0f", color: "#ff8484", padding: 12, margin: 0 }}>{error}</p>}
-    <div style={{ display: "flex", justifyContent: "space-between", font: `10px ${mono}`, color: "#99baba", padding: "6px 9px 6px 40px" }}>
+    {!compact && <><div style={{ display: "flex", justifyContent: "space-between", font: `10px ${mono}`, color: "#99baba", padding: "6px 9px 6px 40px" }}>
       <span>406.000 MHz</span><span>406.050 MHz</span><span>406.100 MHz</span></div>
     <div style={{ padding: "6px 12px", color: "#ffffff", fontSize: 10 }}>
-      {automatic ? `WF Auto · bruit ${noiseFloor === null ? "—" : (noiseFloor + calibrationDb).toFixed(1)} ${relative ? "dB relatifs" : "dBm"} · 3 dB/couleur`
-        : "WF Manuel · Base plus haute = fond plus sombre ; Range plus haut = contraste plus faible"}
+      {automatic ? `WF Auto · noise ${noiseFloor === null ? "—" : (noiseFloor + calibrationDb).toFixed(1)} ${relative ? "relative dB" : "dBm"} · 3 dB/color`
+        : "Manual WF · higher Base = darker background; higher Range = lower contrast"}
     </div>
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, padding: "8px 12px", background: "#001000", color: "#ffffff", fontSize: 10 }} aria-label="Canaux FGB actifs">
-      <span>Essais FGB actifs · avant validation BCH :</span>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, padding: "8px 12px", background: "#001000", color: "#ffffff", fontSize: 10 }} aria-label="Active FGB channels">
+      <span>Active FGB trials · before BCH validation:</span>
       {channels.length ? channels.map(channel => <span key={channel.channel} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
         data-channel={channel.channel} data-frequency-hz={centerHz + channel.frequencyOffsetHz}>
         <i style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: candidateColors[channel.channel] }} />
         {channel.channel + 1} · {((centerHz + channel.frequencyOffsetHz) / 1e6).toFixed(6)} MHz
-      </span>) : <span>aucun</span>}
-    </div>
+      </span>) : <span>none</span>}
+    </div></>}
   </section>;
 }

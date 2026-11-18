@@ -19,7 +19,7 @@ export class Session extends SessionCore {
       const child = spawn(executable, args, { cwd: root, windowsHide: true, stdio: "pipe" });
       child.stderr.setEncoding("utf8").on("data", handlers.stderr);
       child.stdin.on("error", (error: NodeJS.ErrnoException) => {
-        if (error.code !== "EPIPE") emit({ type: "error", message: `Controle natif : ${error.message}` });
+        if (error.code !== "EPIPE") emit({ type: "error", message: `Native control: ${error.message}` });
       });
       const lines = createInterface({ input: child.stdout });
       lines.on("line", handlers.line);

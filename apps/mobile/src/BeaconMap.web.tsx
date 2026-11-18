@@ -14,7 +14,9 @@ export function BeaconMap({ lat, lon }: { lat: number; lon: number }) {
     }).addTo(instance);
     marker.current = L.circleMarker([lat, lon], { radius: 10, color: "#fff", weight: 3, fillColor: "#d4332a", fillOpacity: 1 }).addTo(instance);
     map.current = instance;
-    return () => { instance.remove(); map.current = null; };
+    const observer = new ResizeObserver(() => instance.invalidateSize({ pan: false }));
+    observer.observe(container.current!);
+    return () => { observer.disconnect(); instance.remove(); map.current = null; };
   }, []);
 
   useEffect(() => {
@@ -22,5 +24,5 @@ export function BeaconMap({ lat, lon }: { lat: number; lon: number }) {
     map.current?.setView([lat, lon], map.current.getZoom());
   }, [lat, lon]);
 
-  return <div ref={container} style={{ flex: 1, minHeight: 360, border: "1px solid #28364a" }} role="region" aria-label="Position balise OpenStreetMap" />;
+  return <div ref={container} style={{ flex: 1, minHeight: 0, border: "1px solid #28364a" }} role="region" aria-label="Beacon position on OpenStreetMap" />;
 }

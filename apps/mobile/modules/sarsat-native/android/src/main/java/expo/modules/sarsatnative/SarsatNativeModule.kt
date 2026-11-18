@@ -102,7 +102,7 @@ class SarsatNativeModule : Module() {
             if (stream == 1) lines.append(String(bytes, Charsets.UTF_8))
           }
         })
-        if (code == 0) promise.resolve(lines.toString()) else promise.reject(CodedException("Lecture des reglages natifs impossible"))
+        if (code == 0) promise.resolve(lines.toString()) else promise.reject(CodedException("Could not read native settings"))
       }
     }
 
@@ -113,26 +113,26 @@ class SarsatNativeModule : Module() {
           if (!target.exists()) {
             val partial = File(samplesDir, "$name.part")
             context.assets.open("samples/$name").use { input -> partial.outputStream().use { input.copyTo(it, 1 shl 20) } }
-            if (!partial.renameTo(target)) throw IllegalStateException("renommage impossible")
+            if (!partial.renameTo(target)) throw IllegalStateException("could not rename the file")
           }
           promise.resolve(target.absolutePath)
         } catch (error: Throwable) {
-          promise.reject(CodedException("Copie de l'echantillon impossible : ${error.message}"))
+          promise.reject(CodedException("Could not copy the sample: ${error.message}"))
         }
       }
     }
 
     AsyncFunction("start") { arguments: List<String>, promise: Promise ->
-      if (engine != null) return@AsyncFunction promise.reject(CodedException("Session deja active"))
+      if (engine != null) return@AsyncFunction promise.reject(CodedException("Session already active"))
       if (arguments.firstOrNull() != "receive") return@AsyncFunction runCapture(arguments, promise, false)
       val bus = arguments.indexOf("--bus").takeIf { it >= 0 }?.let { arguments[it + 1].toInt() }
       val address = arguments.indexOf("--address").takeIf { it >= 0 }?.let { arguments[it + 1].toInt() }
       val candidates = devices().filter { bus == null || location(it) == (bus to address) }
       val device = candidates.singleOrNull()
-        ?: return@AsyncFunction promise.reject(CodedException("Brancher une seule cle RTL-SDR compatible (OTG)"))
+        ?: return@AsyncFunction promise.reject(CodedException("Connect a single compatible RTL-SDR device (OTG)"))
       withUsbPermission(device, granted = {
         val opened = usb.openDevice(device)
-          ?: return@withUsbPermission promise.reject(CodedException("Ouverture USB RTL-SDR impossible"))
+          ?: return@withUsbPermission promise.reject(CodedException("Could not open the RTL-SDR USB device"))
         connection = opened
         val filtered = mutableListOf<String>()
         var n = 0
@@ -143,7 +143,7 @@ class SarsatNativeModule : Module() {
         val service = Intent(context, ReceptionService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(service) else context.startService(service)
         runCapture(filtered, promise, true)
-      }, denied = { promise.reject(CodedException("Permission USB refusee")) })
+      }, denied = { promise.reject(CodedException("USB permission denied")) })
     }
 
     Function("stop") { NativeEngine.stop() }

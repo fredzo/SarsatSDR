@@ -17,7 +17,7 @@ function Segment({ color, active }: { color: string; active: boolean }) {
 }
 
 export function DetectionActivity({ generation, detections }: { generation: "FGB" | "SGB"; detections: number }) {
-  const label = `${generation} : ${detections} nouvelles detections depuis le dernier releve`;
+  const label = `${generation}: ${detections} new detections since the last update`;
   return <View accessible accessibilityRole="progressbar" accessibilityLabel={label}
     aria-valuemin={0} aria-valuemax={10} aria-valuenow={Math.min(detections, 10)} style={styles.widget}>
     <Text style={styles.text}>{generation}</Text>

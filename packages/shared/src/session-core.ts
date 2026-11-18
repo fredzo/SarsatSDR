@@ -3,7 +3,7 @@ import { nativeEventSchema, type ServerEvent, type StartCommand } from "./protoc
 export function argumentsFor(command: StartCommand, samples: string[], samplePath: (sample: string) => string): string[] {
   const s = command.settings;
   if (command.source === "sample" && (!command.sample || !samples.includes(command.sample)))
-    throw new Error("Capture inconnue ; choisir un fichier du repertoire samples");
+    throw new Error("Unknown capture; select a file from the sample list");
   const args = command.source === "rtl"
     ? ["receive", "--frequency-hz", String(command.centerHz), "--gain-index", String(command.gainIndex), "--continuous"]
     : ["decode", "--input", samplePath(command.sample!), "--realtime"];
@@ -53,7 +53,7 @@ export class SessionCore {
     private readonly samplePath: (sample: string) => string, private readonly emit: (event: ServerEvent) => void) {}
 
   start(command: StartCommand) {
-    if (this.engine) throw new Error("Session deja active ; arreter avant de changer de source ou de reglage");
+    if (this.engine) throw new Error("Session already active; stop before changing the source or settings");
     const args = argumentsFor(command, this.sampleList(), this.samplePath);
     this.status = "starting";
     this.lastSession = null;
@@ -65,7 +65,7 @@ export class SessionCore {
       line: line => {
         if (closed) return;
         try {
-          if (line.length > 262144) throw new Error("Evenement natif trop volumineux");
+          if (line.length > 262144) throw new Error("Native event is too large");
           const event = nativeEventSchema.parse(JSON.parse(line));
           if (event.type === "frame") {
             event.frame.correctionLimit = event.frame.generation === 1 ? command.settings.fgbMaxErrors : command.settings.sgbMaxErrors;
@@ -82,18 +82,18 @@ export class SessionCore {
           if (event.type === "complete") terminal = true;
           this.emit(event);
         } catch (error) {
-          fail(`Protocole natif invalide : ${error instanceof Error ? error.message : String(error)}`);
+          fail(`Invalid native protocol: ${error instanceof Error ? error.message : String(error)}`);
           this.stop();
         }
       },
-      error: error => fail(`Demarrage du moteur : ${error.message}`),
+      error: error => fail(`Engine startup: ${error.message}`),
       close: code => {
         closed = true;
         if (this.timer) clearTimeout(this.timer);
         this.timer = null;
         this.engine = null;
         if ((code !== 0 && code !== 2) || !terminal)
-          fail(stderr.trim() || `Moteur termine sans resultat final (code ${code})`);
+          fail(stderr.trim() || `Engine exited without a final result (code ${code})`);
         this.status = "idle";
         this.emit({ type: "status", status: this.status });
       },
@@ -106,7 +106,7 @@ export class SessionCore {
     const engine = this.engine;
     engine.stop();
     this.timer = setTimeout(() => {
-      this.emit({ type: "error", message: "Arret natif sans reponse apres 5 s ; processus termine de force" });
+      this.emit({ type: "error", message: "Native stop timed out after 5 s; terminating the process" });
       engine.kill();
     }, 5000);
   }

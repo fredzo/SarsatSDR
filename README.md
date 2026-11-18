@@ -18,7 +18,14 @@ aussi en ligne de commande, sans interface.
 - BCH : capacite FGB BCH-1 de 3 bits, BCH-2 de 2 bits ; SGB de 6 bits.
   Limites de rejet configurables, corrections et ecarts d'en-tete affiches.
   Les trames courtes et d'orbitographie FGB ne produisent pas de statut BCH-2.
-- Navigation en bas : RECEIVER, Frames, MAP, Signal, Player et Settings.
+- Interface en anglais, navigation en bas : Detection, Frames, Map, Signal,
+  Receiver, Player et Settings. Fleches autour de `Frames (x/y)` pour parcourir
+  les trames ; chaque nouvelle reception devient la selection active.
+- Detection : tableau de bord fixe en quatre zones (spectre/waterfall,
+  liste des trames, detail essentiel et carte), adapte aux tablettes paysage.
+  Frames : tableau a gauche et detail complet a droite, avec defilements
+  independants si necessaire. Map : carte sans
+  defilement de page, gestes de zoom et deplacement disponibles.
 - Spectre sur 406,000..406,100 MHz, 1024 bins, 10 spectres/s ; waterfall GPU
   a sept couleurs discretes et points des quatre candidats FGB actifs.
 - Defilement anime de 0,25x a 4x, defaut 1x : historique visible de 28 a
@@ -257,7 +264,7 @@ Le CLI embarque, FFTW et libusb sont lies dans `libsarsat-native.so`,
 appelee par le module Expo local via JNI.
 
 Sources : cle RTL-SDR USB OTG (permission Android et service premier plan),
-captures embarquees et WAV choisi avec `OUVRIR WAV`.
+captures embarquees et WAV choisi avec `OPEN WAV`.
 Les captures ajoutent environ 350 Mo a l'APK ; un WAV est charge en RAM.
 Le tuner attend 10 ms avant chacun des deux controles de verrouillage PLL,
 notamment apres debranchement/rebranchement. Un verrouillage absent reste une erreur.
@@ -357,13 +364,13 @@ Defauts DSP :
 | WF Auto / calibration RTL | actif / 0 dB |
 
 La limite SGB de rejet est distincte de la capacite mathematique de six corrections.
-`Afficher BCH invalides / hors seuil` conserve explicitement les echecs et affiche
-`HORS SEUIL` si necessaire ; ce mode ne constitue pas une validation des trames.
+`Show invalid / over-limit BCH` conserve explicitement les echecs et affiche
+`OVER LIMIT` si necessaire ; ce mode ne constitue pas une validation des trames.
 Le Search Depth est affiche suivant l'echelle `position * 1,2 / 9` kHz.
 
 La FFT utilise une demi-fenetre Blackman doublee, la reponse des deux FIR
 et le maximum des bins par pixel. En RTL, le niveau tient compte du preset de
-gain actif, y compris sous FE_AGC. `Calibration RTL · dB` dans Settings ajoute
+gain actif, y compris sous FE_AGC. `RTL calibration · dB` dans Settings ajoute
 une correction a la FFT, aux marqueurs et a Full BW, sans modifier le decodeur.
 Pour l'etalonner, entrer niveau RF connu moins niveau affiche ; la correction
 est propre a la cle et n'est pas encore sauvegardee. Sans source etalon, les
@@ -381,17 +388,23 @@ saturee entre 0 et 6, arrondi au pair. Augmenter Base assombrit le fond ;
 augmenter Range diminue le contraste. Reglages et calibration recolorent aussi l'historique.
 Les points FFT indiquent des essais FGB avant BCH, pas des trames validees.
 
-Dans Player, choisir une capture puis `LIRE`. Le profil valide, actif par
+Receiver regroupe le spectre et ses controles, puis la barre de reglage,
+les readouts et les metriques d'acquisition.
+Dans Player, le spectre sans controles precede le bloc de lecture.
+Choisir une capture puis `PLAY`. Le profil valide, actif par
 defaut, applique DC, prechauffage et PLL selon `samples/playback-profiles.json`,
 sans changer les reglages de reception radio. Le mode manuel utilise Settings.
 Le retrait DC n'est jamais implicite ; `dcRemovalApplied` l'indique dans le JSON.
 Le prechauffage repete les 200 premieres millisecondes du WAV, qui peuvent deja
 contenir une porteuse. Les temps publies excluent ce prefixe.
 
-Frames presente les trames et leurs champs ; selectionner une trame puis
-`OUVRIR SIGNAL` pour voir ses traces FGB ou SGB dans Signal. Sans selection
-explicite, la derniere trame recue est affichee. Une selection explicite reste
-active pendant les receptions suivantes. MAP utilise la selection localisee
+Frames reserve davantage de largeur au detail, avec tous les champs regroupes
+par section. Le detail defile independamment du tableau si necessaire.
+Ouvrir Signal pour voir les traces FGB ou SGB. Les deux tableaux affichent
+l'horodatage local de reception ; le temps source reste disponible dans le detail.
+Chaque nouvelle trame est selectionnee automatiquement. Un changement de selection
+ramene la ligne correspondante dans la zone visible du tableau.
+MAP utilise la selection localisee
 ou la derniere trame contenant une position.
 
 ## Mode headless

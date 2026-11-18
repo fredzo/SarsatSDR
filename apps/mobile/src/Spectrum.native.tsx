@@ -7,7 +7,6 @@ import { candidateColors, averageSpectrum, WaterfallBuffer, waterfallBins as BIN
   waterfallLineMs, waterfallVisibleRows } from "@sarsat/shared/spectrum-display";
 import { DetectionActivity } from "./DetectionActivity";
 
-const FFT_HEIGHT = 230, WATERFALL_HEIGHT = 180;
 const font = matchFont({ fontFamily: "monospace", fontSize: 11 });
 const waterfallShader = Skia.RuntimeEffect.Make(`
   uniform shader history;
@@ -24,7 +23,7 @@ const waterfallShader = Skia.RuntimeEffect.Make(`
 
 type WaterfallFrame = { image: SkImage; head: number; arrivedAt: number };
 
-function Waterfall({ frame, width, speed }: { frame: WaterfallFrame | null; width: number; speed: number }) {
+function Waterfall({ frame, width, speed, height }: { frame: WaterfallFrame | null; width: number; speed: number; height: number }) {
   const [now, setNow] = useState(() => performance.now());
   const arrivedAt = frame?.arrivedAt ?? -Infinity;
   useEffect(() => {
@@ -39,19 +38,22 @@ function Waterfall({ frame, width, speed }: { frame: WaterfallFrame | null; widt
 
   // Texture, ring head and fractional row must reach Skia in the same commit.
   const progress = Math.max(0, Math.min(1, (now - arrivedAt) / waterfallLineMs));
-  return <Canvas style={{ width, height: WATERFALL_HEIGHT }}>
+  return <Canvas style={{ width, height }}>
     {frame && waterfallShader && <Fill><Shader source={waterfallShader} uniforms={{
-      head: frame.head, width: Math.max(1, width), rowHeight: WATERFALL_HEIGHT / waterfallVisibleRows(speed), progress,
+      head: frame.head, width: Math.max(1, width), rowHeight: height / waterfallVisibleRows(speed), progress,
     }}><ImageShader image={frame.image} tx="clamp" ty="repeat" fit="none"
       sampling={{ filter: FilterMode.Nearest, mipmap: MipmapMode.None }} /></Shader></Fill>}
   </Canvas>;
 }
 
-export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative, sgbDetections, fgbDetections }: {
+export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative, sgbDetections, fgbDetections, compact = false, height }: {
   line: SpectrumEvent | null; epoch: number; floor: number; range: number; average: number;
   channels: AcquisitionChannel[]; centerHz: number; speed: number; automatic: boolean; calibrationDb: number; relative: boolean;
   sgbDetections: number; fgbDetections: number;
+  compact?: boolean; height?: number;
 }) {
+  const fftHeight = compact ? Math.max(70, ((height ?? 400) - 80) * .52) : 230;
+  const waterfallHeight = compact ? Math.max(30, (height ?? 400) - fftHeight - 80) : 180;
   const [width, setWidth] = useState(0);
   const [trace, setTrace] = useState<number[]>([]);
   const [frame, setFrame] = useState<WaterfallFrame | null>(null);
@@ -68,7 +70,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
       const updated = Skia.Image.MakeImage({ width: BINS, height: ROWS,
         alphaType: AlphaType.Opaque, colorType: ColorType.RGBA_8888 },
         Skia.Data.fromBytes(history.current.pixels), BINS * 4);
-      if (!updated) throw new Error("Allocation image waterfall impossible");
+      if (!updated) throw new Error("Could not allocate waterfall image");
       setFrame({ image: updated, head: history.current.head, arrivedAt: arrivedAt.current });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -80,7 +82,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     markerLevels.current.clear();
     history.current = new WaterfallBuffer();
     arrivedAt.current = -Infinity;
-    setError(!waterfallShader ? "Compilation shader waterfall impossible" : "");
+    setError(!waterfallShader ? "Could not compile waterfall shader" : "");
     setFrame(null);
     setTrace([]);
     setNoiseFloor(null);
@@ -111,15 +113,15 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
   }
 
   const plot = width - 48;
-  const ordinate = (level: number) => 12 + Math.max(0, Math.min(80, -70 - level)) / 80 * (FFT_HEIGHT - 30);
+  const ordinate = (level: number) => 12 + Math.max(0, Math.min(80, -70 - level)) / 80 * (fftHeight - 30);
   const abscissa = (fraction: number) => 40 + fraction * plot;
   const grid = useMemo(() => {
     const path = Skia.PathBuilder.Make();
     if (width <= 0) return path.detach();
     for (let db = -150; db <= -70; db += 5) { path.moveTo(40, ordinate(db)); path.lineTo(width - 8, ordinate(db)); }
-    for (let n = 0; n <= 10; n++) { path.moveTo(abscissa(n / 10), 0); path.lineTo(abscissa(n / 10), FFT_HEIGHT - 19); }
+    for (let n = 0; n <= 10; n++) { path.moveTo(abscissa(n / 10), 0); path.lineTo(abscissa(n / 10), fftHeight - 19); }
     return path.detach();
-  }, [width]);
+  }, [width, fftHeight]);
   const spectrum = useMemo(() => {
     const path = Skia.PathBuilder.Make();
     trace.forEach((value, n) => {
@@ -127,25 +129,26 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
       if (n === 0) path.moveTo(x, y); else path.lineTo(x, y);
     });
     return path.detach();
-  }, [trace, width, calibrationDb]);
+  }, [trace, width, calibrationDb, fftHeight]);
 
-  return <View style={styles.scope} accessibilityLabel="Spectre et waterfall 406 a 406,100 MHz">
-    <View style={styles.title}><Text style={styles.titleText}>FFT  406.000 — 406.100 MHz</Text>
+  return <View style={[styles.scope, compact && { marginHorizontal: 0, height }]} accessibilityLabel="Spectrum and waterfall 406 to 406.100 MHz">
+    <View style={[styles.title, compact && { flexDirection: "column", gap: 4, paddingVertical: 5, paddingHorizontal: 4 }]}>
+      <Text style={[styles.titleText, compact && { flex: 0 }]}>FFT  406.000 — 406.100 MHz</Text>
       <View style={{ flexDirection: "row" }}>
         <DetectionActivity generation="FGB" detections={fgbDetections} />
         <DetectionActivity generation="SGB" detections={sgbDetections} />
       </View>
-      <Text style={[styles.titleText, { textAlign: "right" }]}>{relative ? "Niveau relatif · WAV" : `dBm estimes · correction ${calibrationDb.toFixed(1)} dB`}</Text></View>
+      <Text style={[styles.titleText, { textAlign: "right" }, compact && { flex: 0 }]}>{relative ? "Relative level · WAV" : `Estimated dBm · offset ${calibrationDb.toFixed(1)} dB`}</Text></View>
     <View onLayout={(event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width)}>
-      <Canvas style={{ width: "100%", height: FFT_HEIGHT, backgroundColor: "#001000" }}>
+      <Canvas style={{ width: "100%", height: fftHeight, backgroundColor: "#001000" }}>
         <Path path={grid} style="stroke" color="#335555" strokeWidth={1}><DashPathEffect intervals={[3, 3]} /></Path>
         {width > 0 && [-150, -140, -130, -120, -110, -100, -90, -80, -70].map(db =>
           <SkiaText key={db} x={4} y={ordinate(db) + 4} text={String(db)} font={font} color="#99baba" />)}
-        {width > 0 && Array.from({ length: 11 }, (_, n) =>
-          <SkiaText key={n} x={Math.max(40, Math.min(width - 49, abscissa(n / 10) - 20))} y={FFT_HEIGHT - 4}
+        {width > 0 && (compact ? [0, 5, 10] : Array.from({ length: 11 }, (_, n) => n)).map(n =>
+          <SkiaText key={n} x={Math.max(40, Math.min(width - 49, abscissa(n / 10) - 20))} y={fftHeight - 4}
             text={(406 + n / 100).toFixed(3)} font={font} color="#99baba" />)}
         {trace.length ? <Path path={spectrum} style="stroke" color="#00ffff" strokeWidth={1} />
-          : <SkiaText x={55} y={30} text="En attente d'un flux I/Q reel" font={font} color="#99baba" />}
+          : <SkiaText x={55} y={30} text="Waiting for an I/Q stream" font={font} color="#99baba" />}
         {trace.length > 0 && channels.map(channel => {
           const frequency = centerHz + channel.frequencyOffsetHz;
           const held = markerLevels.current.get(channel.channel)?.level;
@@ -160,22 +163,22 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     <View style={styles.waterfallWrap}>
       <View style={styles.timeAxis}><Text style={styles.axisText}>0 s</Text>
         <Text style={styles.axisText}>−{Number((7 / speed).toFixed(2))}s</Text></View>
-      <Waterfall frame={frame} width={Math.max(0, plot)} speed={speed} />
+      <Waterfall frame={frame} width={Math.max(0, plot)} speed={speed} height={waterfallHeight} />
     </View>
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    <View style={styles.foot}>{["406.000 MHz", "406.050 MHz", "406.100 MHz"].map(text =>
+    {!compact && <><View style={styles.foot}>{["406.000 MHz", "406.050 MHz", "406.100 MHz"].map(text =>
       <Text key={text} style={styles.footText}>{text}</Text>)}</View>
     <Text style={[styles.legendText, { paddingHorizontal: 12, paddingVertical: 6 }]}>
-      {automatic ? `WF Auto · bruit ${noiseFloor === null ? "—" : (noiseFloor + calibrationDb).toFixed(1)} ${relative ? "dB relatifs" : "dBm"} · 3 dB/couleur`
-        : "WF Manuel · Base plus haute = fond plus sombre ; Range plus haut = contraste plus faible"}
+      {automatic ? `WF Auto · noise ${noiseFloor === null ? "—" : (noiseFloor + calibrationDb).toFixed(1)} ${relative ? "relative dB" : "dBm"} · 3 dB/color`
+        : "Manual WF · higher Base = darker background; higher Range = lower contrast"}
     </Text>
-    <View style={styles.legend} accessibilityLabel="Canaux FGB actifs">
-      <Text style={styles.legendText}>Essais FGB actifs · avant validation BCH :</Text>
+    <View style={styles.legend} accessibilityLabel="Active FGB channels">
+      <Text style={styles.legendText}>Active FGB trials · before BCH validation:</Text>
       {channels.length ? channels.map(channel => <View key={channel.channel} style={styles.legendItem}>
         <View style={[styles.dot, { backgroundColor: candidateColors[channel.channel] }]} />
         <Text style={styles.legendText}>{channel.channel + 1} · {((centerHz + channel.frequencyOffsetHz) / 1e6).toFixed(6)} MHz</Text>
-      </View>) : <Text style={styles.legendText}>aucun</Text>}
-    </View>
+      </View>) : <Text style={styles.legendText}>none</Text>}
+    </View></>}
   </View>;
 }
 

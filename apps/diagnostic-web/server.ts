@@ -9,13 +9,13 @@ import { commandSchema, type ServerEvent } from "@sarsat/shared/protocol";
 const app = dirname(fileURLToPath(import.meta.url));
 const root = resolve(app, "..", "..");
 const port = Number(process.env.SARSAT_UI_PORT ?? 4173);
-if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("SARSAT_UI_PORT invalide");
+if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid SARSAT_UI_PORT");
 const origin = `http://127.0.0.1:${port}`;
 const clients = new Set<WebSocket>();
 function send(socket: WebSocket, event: ServerEvent) {
   if (socket.readyState !== WebSocket.OPEN) return;
   if (socket.bufferedAmount > 1024 * 1024) {
-    socket.close(1013, "Client trop lent ; evenements non abandonnes silencieusement");
+    socket.close(1013, "Client too slow; events cannot be silently discarded");
     return;
   }
   socket.send(JSON.stringify(event));
@@ -82,7 +82,7 @@ server.listen(port, "127.0.0.1", () => console.log(`SarsatSDR: ${origin}`));
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     session.stop();
-    for (const client of clients) client.close(1001, "Serveur arrete");
+    for (const client of clients) client.close(1001, "Server stopped");
     server.close();
     sockets.close();
   });
