@@ -16,11 +16,11 @@ function Segment({ color, active }: { color: string; active: boolean }) {
   }]} />;
 }
 
-export function SgbActivity({ detections }: { detections: number }) {
-  const label = `SGB : ${detections} nouvelles detections depuis le dernier releve`;
+export function DetectionActivity({ generation, detections }: { generation: "FGB" | "SGB"; detections: number }) {
+  const label = `${generation} : ${detections} nouvelles detections depuis le dernier releve`;
   return <View accessible accessibilityRole="progressbar" accessibilityLabel={label}
     aria-valuemin={0} aria-valuemax={10} aria-valuenow={Math.min(detections, 10)} style={styles.widget}>
-    <Text style={styles.text}>SGB</Text>
+    <Text style={styles.text}>{generation}</Text>
     <View style={styles.meter}>
       {colors.map((color, index) => <Segment key={index} color={color} active={detections > index} />)}
     </View>
@@ -28,8 +28,8 @@ export function SgbActivity({ detections }: { detections: number }) {
 }
 
 const styles = StyleSheet.create({
-  widget: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10 },
-  meter: { flexDirection: "row", gap: 2 },
-  segment: { width: 12, height: 7, borderRadius: 1, borderWidth: 1 },
+  widget: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 6 },
+  meter: { flexDirection: "row", gap: 1 },
+  segment: { width: 10, height: 7, borderRadius: 1, borderWidth: 1 },
   text: { fontFamily: "monospace", fontSize: 10, color: "#00ffff" },
 });

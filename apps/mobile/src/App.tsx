@@ -16,10 +16,10 @@ import type { Transport } from "./transport-types";
 
 type Entry = { id: number; frame: Frame; received: string; source: string; centerHz: number };
 const frameMhz = (entry: Entry) => ((entry.centerHz + entry.frame.frequencyOffsetHz) / 1e6).toFixed(6);
-const tabs = ["RECEIVER", "Frames", "MAP", "Signal", "Player", "Settings"] as const;
+const tabs = ["Detection", "Frames", "Map", "Receiver", "Player", "Settings"] as const;
 type Tab = typeof tabs[number];
-const tabIcons: Record<Tab, LucideIcon> = { RECEIVER: RadioTower, Frames: FileText, MAP: MapPin,
-  Signal: Activity, Player: FileAudio, Settings: SettingsIcon };
+const tabIcons: Record<Tab, LucideIcon> = { Detection: RadioTower, Frames: FileText, Map: MapPin,
+  Receiver: Activity, Player: FileAudio, Settings: SettingsIcon };
 const numericSettings: { key: keyof Pick<Settings, "fgbAlpha" | "fgbBeta" | "fgbOverPeakDb" |
   "fgbZeta" | "fgbAverage" | "fgbRuntimeMs" | "fgbMaxErrors" | "fgbBch2MaxErrors" | "fgbHeaderErrors" | "sgbThreshold" | "sgbPhaseGain" |
   "sgbFrequencyGain" | "sgbFilter" | "sgbFeedback" | "sgbMaxErrors" | "searchDepth">;
@@ -122,9 +122,9 @@ function Trace({ title, trace }: { title: string; trace: NonNullable<Frame["trac
       <Path d="M0 72 H900 M450 0 V145" stroke="#003333" /><Polyline points={points} fill="none" stroke="#99ec80" strokeWidth={1} />
     </Svg><Text style={[s.traceText, s.mono, { padding: 5, paddingHorizontal: 12, fontSize: 10 }]}>{minimum.toPrecision(4)} … {maximum.toPrecision(4)}</Text></View>;
 }
-function Signal({ entry }: { entry: Entry | undefined }) {
+function Receiver({ entry }: { entry: Entry | undefined }) {
     return <View style={s.panel}>
-      <Text style={s.h2}>Signal <Text style={s.h2Small}>Trame selectionnee dans Frames · derniere recue par defaut</Text></Text>
+      <Text style={s.h2}>Receiver <Text style={s.h2Small}>Trame selectionnee dans Frames · derniere recue par defaut</Text></Text>
       {!entry ? <Text style={[s.empty, { paddingVertical: 80 }]}>Aucune trame recue.</Text> : <>
         <Text style={s.detail}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.source} · Reception : {entry.received}</Text>
         <Text selectable style={[s.mono, s.code]}>{entry.frame.correctedHex}</Text>
@@ -148,7 +148,7 @@ const Led = ({ tone }: { tone?: "green" | "amber" }) =>
 export default function App() {
   const [info, setInfo] = useState<Info | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [tab, setTab] = useState<Tab>("RECEIVER");
+  const [tab, setTab] = useState<Tab>("Detection");
   const [status, setStatus] = useState<Info["status"]>("idle");
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
@@ -158,6 +158,8 @@ export default function App() {
   const [channels, setChannels] = useState<AcquisitionChannel[]>([]);
   const [sgbDetections, setSgbDetections] = useState(0);
   const previousSgbCandidates = useRef(0);
+  const [fgbDetections, setFgbDetections] = useState(0);
+  const previousFgbCandidates = useRef(0);
   const [metrics, setMetrics] = useState<{ samples: number; diagnostics: Diagnostics; gainIndex?: number; clippedSamples?: number } | null>(null);
   const [session, setSession] = useState<{ source: "rtl" | "sample"; centerHz: number; sampleRateHz: number; durationSeconds: number | null; noisePrerollMs?: number } | null>(null);
   const [epoch, setEpoch] = useState(0);
@@ -192,14 +194,16 @@ export default function App() {
       try {
         if (message.type === "status") {
           setStatus(message.status);
-          if (message.status === "idle") { setChannels([]); setSgbDetections(0); }
+          if (message.status === "idle") { setChannels([]); setSgbDetections(0); setFgbDetections(0); }
         }
         else if (message.type === "error") setError(message.message);
         else if (message.type === "session") {
           frameSource.label = message.label ?? (message.source === "rtl" ? "RTL-SDR" : "WAV I/Q");
           frameSource.centerHz = message.centerHz;
           previousSgbCandidates.current = 0;
+          previousFgbCandidates.current = 0;
           setSgbDetections(0);
+          setFgbDetections(0);
           setSession(message); setLine(null); setChannels([]); setMetrics(null); setEpoch(value => value + 1);
         } else if (message.type === "spectrum") setLine(message);
         else if (message.type === "acquisition") setChannels(message.channels);
@@ -207,9 +211,12 @@ export default function App() {
           const candidates = message.diagnostics.sgbCandidates;
           setSgbDetections(Math.max(0, candidates - previousSgbCandidates.current));
           previousSgbCandidates.current = candidates;
+          const fgbCandidates = message.diagnostics.fgbCandidates;
+          setFgbDetections(Math.max(0, fgbCandidates - previousFgbCandidates.current));
+          previousFgbCandidates.current = fgbCandidates;
           setMetrics(message);
         }
-        else if (message.type === "complete") { setChannels([]); setSgbDetections(0); setMetrics(previous => ({
+        else if (message.type === "complete") { setChannels([]); setSgbDetections(0); setFgbDetections(0); setMetrics(previous => ({
           ...(previous ?? {}), samples: message.result.dspSamples ?? previous?.samples ?? 0,
           diagnostics: message.result.diagnostics,
         })); }
@@ -224,7 +231,7 @@ export default function App() {
     const created = createTransport({ event: handle, connection: (value, reason) => {
       if (!active) return;
       setConnected(value);
-      if (!value) { setChannels([]); setSgbDetections(0); if (reason) setError(reason); }
+      if (!value) { setChannels([]); setSgbDetections(0); setFgbDetections(0); if (reason) setError(reason); }
     } });
     setTransport(created);
     void refresh(created).catch(reason => { if (active) setError(String(reason)); });
@@ -278,18 +285,22 @@ export default function App() {
   const d = metrics?.diagnostics;
   const decoderLocked = busy || !displayedSettings || (tab === "Player" && useSampleProfile);
   const duration = session?.durationSeconds ?? 1;
+  const receiving = connected && status === "running";
 
   return <View style={s.main}>
     <View style={s.titlebar}><View style={s.brand}><RadioTower size={28} color="#3fe6e6" /><Text style={s.brandStrong}>SarsatSDR</Text>
       <Text style={s.brandSpan}>COSPAS-SARSAT · 406 MHz · FGB / SGB</Text></View>
-      <View style={s.row}>{connected ? <MonitorUp size={20} color="#ffffff" /> : <MonitorX size={20} color="#ff8484" />}
-        <Led tone={connected ? "green" : undefined} /><Text style={s.connection}>
-        {connected ? Platform.OS === "web" ? "LOCAL CONNECTED" : "MOTEUR EMBARQUE" : "OFFLINE"} · C++20 DSP · RTL-SDR</Text></View></View>
+      <View style={s.row}>
+        <View style={s.row}><Led tone={connected ? "green" : undefined} /><Text style={s.connection}>
+          {connected ? Platform.OS === "web" ? "CONNECTED" : "ONLINE" : "OFFLINE"} · RTL-SDR</Text></View>
+        <View style={s.row}><Led tone={receiving ? "green" : undefined} />
+          <Text style={s.connection}>{receiving ? "RECEIVING" : "STOPPED"}</Text></View>
+      </View></View>
     {!!error && <View accessibilityRole="alert" style={s.error}><Text style={s.errorText}><Text style={{ fontWeight: "bold" }}>ERREUR </Text>{error}</Text>
       <Pressable accessibilityLabel="Fermer erreur" onPress={() => setError("")}><Text style={[s.errorText, { fontSize: 22 }]}>×</Text></Pressable></View>}
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
       <View style={s.toolbar}>
-        <NumberField label="Centre · MHz" value={center} onChange={setCenter} disabled={busy} big />
+        <NumberField label="Centre · MHz" value={Number(center).toFixed(3)} onChange={setCenter} disabled={busy} big />
         <View style={[s.fieldset, decoderLocked && { opacity: .6 }]}><Text style={s.legend}>DECODERS</Text><View style={s.row}>
           <Check label="FGB" value={displayedSettings?.fgb ?? false} disabled={decoderLocked} onChange={value => change("fgb", value)} />
           <Check label="SGB" value={displayedSettings?.sgb ?? false} disabled={decoderLocked} onChange={value => change("sgb", value)} />
@@ -308,7 +319,7 @@ export default function App() {
         <Readout label="TRAMES EN MEMOIRE">{entries.length} / 200</Readout>
       </View>
 
-      {(tab === "RECEIVER" || tab === "Player") && <View>
+      {(tab === "Detection" || tab === "Player") && <View>
         {tab === "Player" && <View style={s.panel}><Text style={s.h2}>Player <Text style={s.h2Small}>Lecture native des captures de regression</Text></Text>
           <View style={s.row}>
             <Select label="Capture WAV" disabled={busy} value={sample} onChange={setSample}
@@ -333,15 +344,15 @@ export default function App() {
           <Text style={s.p}>Lecture temps reel ; arret puis relance depuis debut. Pas encore d'enregistrement ni de recherche temporelle.</Text></View>}
         <Spectrum line={line} channels={channels} centerHz={session?.centerHz ?? center * 1e6}
           epoch={epoch} floor={base} range={range} average={average} speed={waterfallSpeed}
-          sgbDetections={sgbDetections}
+          sgbDetections={sgbDetections} fgbDetections={fgbDetections}
           automatic={waterfallAutomatic} calibrationDb={session?.source === "rtl" ? calibrationDb : 0} relative={session?.source === "sample"} />
         <View style={s.displayControls}>
           <Range label="FFT Average" value={average} min={.01} max={.99} step={.01} onChange={setAverage} digits={2} />
           <Check label="WF Auto" value={waterfallAutomatic} onChange={setWaterfallAutomatic} />
           <Range label="WF Base" value={base} min={0} max={100} step={1} onChange={setBase} disabled={waterfallAutomatic} />
           <Range label="WF Range" value={range} min={0} max={100} step={1} onChange={setRange} disabled={waterfallAutomatic} />
-          <Range label="WF Vitesse · x" value={waterfallSpeed} min={.25} max={4} step={.25}
-            onChange={setWaterfallSpeed} digits={2} />
+          <Range label={`WF Duration: ${(7 / waterfallSpeed).toFixed(1).padStart(4, "0")} s     WF Speed`} value={waterfallSpeed} min={.25} max={4} step={.25}
+            onChange={setWaterfallSpeed} digits={2}/>
         </View>
         <View style={s.metrics}>
           <Metric title="FGB ACQUISITION" rows={[["Peak / mean", `${d?.fgbMaxPeakDb.toFixed(2) ?? "—"} dB`],
@@ -384,11 +395,11 @@ export default function App() {
           <Badges>{bchBadges(activeFrame.frame)}{headerBadge(activeFrame.frame)}</Badges>
           <Text style={s.detail}>Brut</Text><Text selectable style={[s.mono, s.code]}>{activeFrame.frame.rawHex}</Text>
           <Text style={s.detail}>Corrige</Text><Text selectable style={[s.mono, s.code]}>{activeFrame.frame.correctedHex}</Text>
-          <View style={s.row}><Button icon={Activity} title="OUVRIR SIGNAL" onPress={() => setTab("Signal")} /></View>
+          <View style={s.row}><Button icon={Activity} title="Open Receiver" onPress={() => setTab("Receiver")} /></View>
           <FieldDetails frame={activeFrame.frame} /></View>}
       </View>}
 
-      {tab === "MAP" && <View style={[s.panel, { minHeight: 520 }]}>
+      {tab === "Map" && <View style={[s.panel, { minHeight: 520 }]}>
         <Text style={s.h2}>MAP <Text style={s.h2Small}>Position balise · selection Frames ou derniere trame localisee</Text></Text>
         {!located || !position ? <View style={{ paddingVertical: 80, alignItems: "center" }}><Text style={s.emptyStrong}>Aucune position balise</Text>
           <Text style={s.empty}>Aucune trame recue ne contient de position decodee.</Text></View> : <>
@@ -401,7 +412,7 @@ export default function App() {
           </View></>}
       </View>}
 
-      {tab === "Signal" && <Signal entry={activeFrame} />}
+      {tab === "Receiver" && <Receiver entry={activeFrame} />}
 
       {tab === "Settings" && <View style={s.panel}><Text style={s.h2}>Settings <Text style={s.h2Small}>Appliques au prochain demarrage</Text></Text>
         <View style={s.fieldset}><Text style={s.legend}>RTL-SDR · 921600 echantillons complexes/s · Bias-T OFF</Text>
@@ -434,8 +445,6 @@ export default function App() {
           WF Auto suit lentement le bruit ; le desactiver pour retrouver Base/Range manuels.</Text>
       </View>}
     </ScrollView>
-    <View style={s.statusbar}><View style={s.row}><Led tone={connected ? "green" : undefined} /><Text style={s.status}>{transport?.label ?? "—"}</Text></View>
-      <Text style={s.status}>FFT reduite 1024 bins · 10 Hz · Waterfall {(7 / waterfallSpeed).toFixed(2)} s</Text><Text style={s.status}>DSP natif C++20</Text></View>
     <ScrollView horizontal style={s.nav} contentContainerStyle={s.navContent}>
       {tabs.map(name => <Button key={name} kind={tab === name ? "tabActive" : "tab"} onPress={() => setTab(name)}
         icon={tabIcons[name]} title={name === "Frames" ? `${name} (${entries.length})` : name} />)}</ScrollView>

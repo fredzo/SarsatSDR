@@ -5,7 +5,7 @@ import { AlphaType, Canvas, Circle, ColorType, DashPathEffect, Fill, FilterMode,
 import type { SpectrumEvent, AcquisitionChannel } from "@sarsat/shared/protocol";
 import { candidateColors, averageSpectrum, WaterfallBuffer, waterfallBins as BINS, waterfallRows as ROWS,
   waterfallLineMs, waterfallVisibleRows } from "@sarsat/shared/spectrum-display";
-import { SgbActivity } from "./SgbActivity";
+import { DetectionActivity } from "./DetectionActivity";
 
 const FFT_HEIGHT = 230, WATERFALL_HEIGHT = 180;
 const font = matchFont({ fontFamily: "monospace", fontSize: 11 });
@@ -47,10 +47,10 @@ function Waterfall({ frame, width, speed }: { frame: WaterfallFrame | null; widt
   </Canvas>;
 }
 
-export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative, sgbDetections }: {
+export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative, sgbDetections, fgbDetections }: {
   line: SpectrumEvent | null; epoch: number; floor: number; range: number; average: number;
   channels: AcquisitionChannel[]; centerHz: number; speed: number; automatic: boolean; calibrationDb: number; relative: boolean;
-  sgbDetections: number;
+  sgbDetections: number; fgbDetections: number;
 }) {
   const [width, setWidth] = useState(0);
   const [trace, setTrace] = useState<number[]>([]);
@@ -131,7 +131,10 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
 
   return <View style={styles.scope} accessibilityLabel="Spectre et waterfall 406 a 406,100 MHz">
     <View style={styles.title}><Text style={styles.titleText}>FFT  406.000 — 406.100 MHz</Text>
-      <SgbActivity detections={sgbDetections} />
+      <View style={{ flexDirection: "row" }}>
+        <DetectionActivity generation="FGB" detections={fgbDetections} />
+        <DetectionActivity generation="SGB" detections={sgbDetections} />
+      </View>
       <Text style={[styles.titleText, { textAlign: "right" }]}>{relative ? "Niveau relatif · WAV" : `dBm estimes · correction ${calibrationDb.toFixed(1)} dB`}</Text></View>
     <View onLayout={(event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width)}>
       <Canvas style={{ width: "100%", height: FFT_HEIGHT, backgroundColor: "#001000" }}>
