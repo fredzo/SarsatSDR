@@ -5,7 +5,7 @@ import { Picker } from "@react-native-picker/picker";
 import Slider from "@react-native-community/slider";
 import Svg, { Path, Polyline } from "react-native-svg";
 import { Activity, Download, Eraser, FileAudio, FileText, FolderOpen, MapPin, MonitorUp, MonitorX,
-  Navigation, Play, RadioTower, RefreshCw, Settings as SettingsIcon, Square, Usb, type LucideIcon } from "lucide-react-native";
+  Navigation, Play, BoomBox, RadioTower, RefreshCw, Settings as SettingsIcon, Square, Usb, type LucideIcon } from "lucide-react-native";
 import { startSchema, playbackConfiguration, type Frame, type Info, type Settings, type SpectrumEvent,
   type Diagnostics, type AcquisitionChannel, type ServerEvent } from "@sarsat/shared/protocol";
 import { beaconPosition, googleMapsUrl, wazeUrl } from "@sarsat/shared/beacon-position";
@@ -16,10 +16,10 @@ import type { Transport } from "./transport-types";
 
 type Entry = { id: number; frame: Frame; received: string; source: string; centerHz: number };
 const frameMhz = (entry: Entry) => ((entry.centerHz + entry.frame.frequencyOffsetHz) / 1e6).toFixed(6);
-const tabs = ["Detection", "Frames", "Map", "Receiver", "Player", "Settings"] as const;
+const tabs = ["Detection", "Frames", "Map", "Signal", "Receiver", "Player", "Settings"] as const;
 type Tab = typeof tabs[number];
 const tabIcons: Record<Tab, LucideIcon> = { Detection: RadioTower, Frames: FileText, Map: MapPin,
-  Receiver: Activity, Player: FileAudio, Settings: SettingsIcon };
+  Signal: Activity, Receiver: BoomBox, Player: FileAudio, Settings: SettingsIcon };
 const numericSettings: { key: keyof Pick<Settings, "fgbAlpha" | "fgbBeta" | "fgbOverPeakDb" |
   "fgbZeta" | "fgbAverage" | "fgbRuntimeMs" | "fgbMaxErrors" | "fgbBch2MaxErrors" | "fgbHeaderErrors" | "sgbThreshold" | "sgbPhaseGain" |
   "sgbFrequencyGain" | "sgbFilter" | "sgbFeedback" | "sgbMaxErrors" | "searchDepth">;
@@ -42,16 +42,17 @@ const numericSettings: { key: keyof Pick<Settings, "fgbAlpha" | "fgbBeta" | "fgb
   { key: "sgbMaxErrors", label: "SGB BCH erreurs max", max: 6 },
 ];
 
-function Button({ title, onPress, disabled, kind, icon: Icon, backgroundColor }: { title: string; onPress: () => void; disabled?: boolean;
+function Button({ title, onPress, disabled, kind, icon: Icon, backgroundColor, iconOnly }: { title: string; onPress: () => void; disabled?: boolean;
+  iconOnly?: boolean;
   kind?: "primary" | "stop" | "tab" | "tabActive" | "big"; icon?: LucideIcon; backgroundColor?: string }) {
   const color = kind === "stop" ? "#ff8484" : kind === "tabActive" ? "#00ffff" : kind === "tab" ? "#98a3a3" : "#ffffff";
   return <Pressable accessibilityRole="button" accessibilityLabel={title}
     accessibilityState={{ disabled, selected: kind === "tabActive" }} disabled={disabled} onPress={onPress}
     style={({ pressed }) => [s.button, kind === "primary" && s.primary, kind === "tab" && s.tab, kind === "tabActive" && s.tabActive,
-      kind === "big" && s.big, backgroundColor ? { backgroundColor, borderColor: backgroundColor } : undefined,
+      kind === "big" && s.big, iconOnly && s.iconButton, backgroundColor ? { backgroundColor, borderColor: backgroundColor } : undefined,
       pressed && { opacity: .7 }, disabled && { opacity: .45 }]}>
-    {Icon && <Icon size={kind === "big" ? 26 : 20} color={color} />}
-    <Text style={[s.buttonText, { color }, (kind === "primary" || kind === "tabActive" || kind === "big") && { fontWeight: "600" }]}>{title}</Text>
+    {Icon && <Icon size={kind === "big" || iconOnly ? 26 : 20} color={color} />}
+    {!iconOnly && <Text style={[s.buttonText, { color }, (kind === "primary" || kind === "tabActive" || kind === "big") && { fontWeight: "600" }]}>{title}</Text>}
   </Pressable>;
 }
 function Check({ label, value, onChange, disabled }: { label: string; value: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
@@ -122,9 +123,9 @@ function Trace({ title, trace }: { title: string; trace: NonNullable<Frame["trac
       <Path d="M0 72 H900 M450 0 V145" stroke="#003333" /><Polyline points={points} fill="none" stroke="#99ec80" strokeWidth={1} />
     </Svg><Text style={[s.traceText, s.mono, { padding: 5, paddingHorizontal: 12, fontSize: 10 }]}>{minimum.toPrecision(4)} … {maximum.toPrecision(4)}</Text></View>;
 }
-function Receiver({ entry }: { entry: Entry | undefined }) {
+function Signal({ entry }: { entry: Entry | undefined }) {
     return <View style={s.panel}>
-      <Text style={s.h2}>Receiver <Text style={s.h2Small}>Trame selectionnee dans Frames · derniere recue par defaut</Text></Text>
+      <Text style={s.h2}>Signal <Text style={s.h2Small}>Trame selectionnee dans Frames · derniere recue par defaut</Text></Text>
       {!entry ? <Text style={[s.empty, { paddingVertical: 80 }]}>Aucune trame recue.</Text> : <>
         <Text style={s.detail}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.source} · Reception : {entry.received}</Text>
         <Text selectable style={[s.mono, s.code]}>{entry.frame.correctedHex}</Text>
@@ -133,6 +134,10 @@ function Receiver({ entry }: { entry: Entry | undefined }) {
         <Trace title="Recovered phase / PLL error" trace={entry.frame.traces?.phase} />
         <Trace title="Recovered I" trace={entry.frame.traces?.i} /><Trace title="Recovered Q" trace={entry.frame.traces?.q} />
       </>}
+    </View>;
+}
+function Receiver({ entry }: { entry: Entry | undefined }) {
+    return <View style={s.panel}>
     </View>;
 }
 function Readout({ label, children }: { label: string; children: ReactNode }) {
@@ -158,6 +163,7 @@ export default function App() {
   const [channels, setChannels] = useState<AcquisitionChannel[]>([]);
   const [sgbDetections, setSgbDetections] = useState(0);
   const previousSgbCandidates = useRef(0);
+  const receiverActionPending = useRef(false);
   const [fgbDetections, setFgbDetections] = useState(0);
   const previousFgbCandidates = useRef(0);
   const [metrics, setMetrics] = useState<{ samples: number; diagnostics: Diagnostics; gainIndex?: number; clippedSamples?: number } | null>(null);
@@ -193,10 +199,11 @@ export default function App() {
       if (!active) return;
       try {
         if (message.type === "status") {
+          if (message.status === "running" || message.status === "idle") receiverActionPending.current = false;
           setStatus(message.status);
           if (message.status === "idle") { setChannels([]); setSgbDetections(0); setFgbDetections(0); }
         }
-        else if (message.type === "error") setError(message.message);
+        else if (message.type === "error") { receiverActionPending.current = false; setError(message.message); }
         else if (message.type === "session") {
           frameSource.label = message.label ?? (message.source === "rtl" ? "RTL-SDR" : "WAV I/Q");
           frameSource.centerHz = message.centerHz;
@@ -231,7 +238,7 @@ export default function App() {
     const created = createTransport({ event: handle, connection: (value, reason) => {
       if (!active) return;
       setConnected(value);
-      if (!value) { setChannels([]); setSgbDetections(0); setFgbDetections(0); if (reason) setError(reason); }
+      if (!value) { receiverActionPending.current = false; setChannels([]); setSgbDetections(0); setFgbDetections(0); if (reason) setError(reason); }
     } });
     setTransport(created);
     void refresh(created).catch(reason => { if (active) setError(String(reason)); });
@@ -256,8 +263,15 @@ export default function App() {
       ...(device ? { bus: location[0], address: location[1] } : {}) });
     if (!parsed.success) { setError(parsed.error.issues.map(issue => issue.message).join(" · ")); return; }
     transport?.send(parsed.data);
+    return true;
   }
   function stop() { transport?.send({ type: "stop" }); }
+  function toggleReceiver() {
+    if (receiverActionPending.current) return;
+    receiverActionPending.current = true;
+    if (busy) stop();
+    else if (!start("rtl")) receiverActionPending.current = false;
+  }
   function change<K extends keyof Settings>(key: K, value: Settings[K]) {
     setSettings(old => old ? { ...old, [key]: value } : old);
   }
@@ -294,7 +308,11 @@ export default function App() {
         <View style={s.row}><Led tone={connected ? "green" : undefined} /><Text style={s.connection}>
           {connected ? Platform.OS === "web" ? "CONNECTED" : "ONLINE" : "OFFLINE"} · RTL-SDR</Text></View>
         <View style={s.row}><Led tone={receiving ? "green" : undefined} />
-          <Text style={s.connection}>{receiving ? "RECEIVING" : "STOPPED"}</Text></View>
+          <Text numberOfLines={1} style={[s.connection, s.receivingLabel]}>{receiving ? "RECEIVING" : "STOPPED"}</Text></View>
+        <Button iconOnly kind={busy ? "stop" : "primary"} icon={busy ? Square : Play}
+          backgroundColor={busy ? "#4a1616" : undefined} title={busy ? "Arreter la reception" : "Demarrer la reception"}
+          disabled={!connected || status === "starting" || status === "stopping" || (!busy && (!settings || !info?.devices.length))}
+          onPress={toggleReceiver} />
       </View></View>
     {!!error && <View accessibilityRole="alert" style={s.error}><Text style={s.errorText}><Text style={{ fontWeight: "bold" }}>ERREUR </Text>{error}</Text>
       <Pressable accessibilityLabel="Fermer erreur" onPress={() => setError("")}><Text style={[s.errorText, { fontSize: 22 }]}>×</Text></Pressable></View>}
@@ -307,8 +325,6 @@ export default function App() {
           <Check label="Normal PRN" value={displayedSettings?.normalPrn ?? false} disabled={decoderLocked} onChange={value => change("normalPrn", value)} />
           <Check label="Self Test PRN" value={displayedSettings?.testPrn ?? false} disabled={decoderLocked} onChange={value => change("testPrn", value)} />
         </View></View>
-        <View style={s.row}><Button kind="primary" icon={Play} title="RECEVOIR" disabled={busy || !connected || !settings || !info?.devices.length} onPress={() => start("rtl")} />
-          <Button kind="stop" icon={Square} title="STOP" disabled={!busy || status === "stopping"} onPress={stop} /></View>
       </View>
       <View style={s.readouts}>
         <Readout label="ETAT RECEPTEUR">{status.toUpperCase()}</Readout>
@@ -395,7 +411,7 @@ export default function App() {
           <Badges>{bchBadges(activeFrame.frame)}{headerBadge(activeFrame.frame)}</Badges>
           <Text style={s.detail}>Brut</Text><Text selectable style={[s.mono, s.code]}>{activeFrame.frame.rawHex}</Text>
           <Text style={s.detail}>Corrige</Text><Text selectable style={[s.mono, s.code]}>{activeFrame.frame.correctedHex}</Text>
-          <View style={s.row}><Button icon={Activity} title="Open Receiver" onPress={() => setTab("Receiver")} /></View>
+          <View style={s.row}><Button icon={Activity} title="Open Signal" onPress={() => setTab("Signal")} /></View>
           <FieldDetails frame={activeFrame.frame} /></View>}
       </View>}
 
@@ -411,6 +427,8 @@ export default function App() {
             <View style={{ flex: 1 }}><Button kind="big" icon={Navigation} backgroundColor="#0DACE5" title="WAZE" onPress={() => { void Linking.openURL(wazeUrl(position.lat, position.lon)); }} /></View>
           </View></>}
       </View>}
+
+      {tab === "Signal" && <Signal entry={activeFrame} />}
 
       {tab === "Receiver" && <Receiver entry={activeFrame} />}
 
@@ -455,16 +473,18 @@ const columns = [100, 140, 50, 170, 120, 80, 260, 300];
 const mono = Platform.select({ web: "Consolas,monospace", default: "monospace" });
 const s = StyleSheet.create({
   main: { flex: 1, backgroundColor: "#001000" },
-  titlebar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#002222", paddingVertical: 15, paddingHorizontal: 20 },
+  titlebar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#002222", minHeight: 58, paddingVertical: 5, paddingHorizontal: 20 },
   brand: { flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "center", flexShrink: 1 },
   brandStrong: { fontSize: 20, letterSpacing: 1, color: "#3fe6e6", fontWeight: "700" },
   brandSpan: { fontSize: 10, letterSpacing: 1.3, color: "#99baba" },
   connection: { fontSize: 10, color: "#ffffff", letterSpacing: .5 },
+  receivingLabel: { width: 74, flexShrink: 0 },
   nav: { flexGrow: 0, flexShrink: 0, backgroundColor: "#000000", borderTopWidth: 1, borderTopColor: "#003333" },
   navContent: { flexGrow: 1, justifyContent: "space-around", gap: 4, paddingHorizontal: 12, paddingVertical: 7 },
   row: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 10 },
   button: { flexDirection: "row", gap: 8, borderWidth: 1, borderColor: "#335555", borderRadius: 12, paddingVertical: 10, paddingHorizontal: 16, backgroundColor: "#003333", minHeight: 48, justifyContent: "center", alignItems: "center" },
   buttonText: { color: "#ffffff", fontSize: 13 },
+  iconButton: { width: 48, height: 48, minHeight: 48, borderRadius: 8, paddingHorizontal: 0, paddingVertical: 0 },
   primary: { backgroundColor: "#00885f", borderColor: "#00885f" },
   tab: { backgroundColor: "#000000", borderColor: "#000000", borderRadius: 0, borderBottomWidth: 2 },
   tabActive: { backgroundColor: "#002222", borderColor: "#002222", borderBottomColor: "#00ffff", borderRadius: 0, borderBottomWidth: 2 },

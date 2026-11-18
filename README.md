@@ -337,7 +337,8 @@ une compilation EAS sans `--local` televerse le code vers les serveurs Expo.
 
 ## Utilisation
 
-`RECEVOIR` ouvre la cle ; `STOP` attend la fermeture USB et le vidage DSP avant
+Le bouton du bandeau, a droite de RECEIVING / STOPPED, ouvre la cle
+(triangle vert) ou arrete la session (carre rouge). L'arret attend la fermeture USB et le vidage DSP avant
 une autre session. Avec plusieurs cles, choisir bus/adresse dans Settings.
 Les reglages sont geles pendant une session et ne sont pas encore sauvegardes.
 
