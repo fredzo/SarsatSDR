@@ -46,6 +46,10 @@ aussi en ligne de commande, sans interface.
 
 Cette procedure part d'un poste Windows 10/11 x64 vierge. Utiliser **MSYS2 UCRT64** pour compiler le moteur Windows et **Invite de commandes Windows (`cmd.exe`)** pour Node.js, Android et ADB. Installer le depot dans un chemin court sans accent, par exemple `C:\src\sarsat-sdr`.
 
+Pour la version PC, suivre les etapes 1 a 3 et, pour la reception RTL-SDR,
+l'etape 6. Les etapes 4 et 5 servent uniquement a construire l'APK Android ;
+installer un APK deja genere ne requiert que Platform-Tools pour le deploiement ADB.
+
 ### 1. Git et chemins longs
 
 Installer [Git for Windows](https://git-scm.com/download/win), puis verifier dans `cmd.exe` :
@@ -65,7 +69,7 @@ Cloner le depot :
 ```bat
 mkdir C:\src
 cd /d C:\src
-git clone <URL_DU_DEPOT> sarsat-sdr
+git clone https://github.com/fredzo/SarsatSDR.git sarsat-sdr
 cd /d C:\src\sarsat-sdr
 ```
 
@@ -104,20 +108,12 @@ pkg-config --modversion fftw3f
 pkg-config --modversion libusb-1.0
 ```
 
-Ajouter `C:\msys64\ucrt64\bin` au `PATH` utilisateur. La commande suivante conserve le `PATH` utilisateur existant :
-
-```bat
-for /f "tokens=2,*" %A in ('reg query HKCU\Environment /v Path 2^>nul ^| findstr /i "Path"') do set "USER_PATH=%B"
-setx PATH "%USER_PATH%;C:\msys64\ucrt64\bin"
-```
-
-Si aucune variable `Path` utilisateur n'existe encore, utiliser :
-
-```bat
-setx PATH "C:\msys64\ucrt64\bin"
-```
-
-Fermer et rouvrir les terminaux apres `setx`. Ne pas executer plusieurs fois la commande d'ajout sans verifier le contenu du `PATH`.
+Dans **Parametres systeme avances > Variables d'environnement > Variables
+utilisateur > Path > Modifier > Nouveau**, ajouter `C:\msys64\ucrt64\bin`
+sans supprimer les entrees existantes. Creer la variable `Path` si elle
+n'existe pas encore. Fermer et rouvrir les terminaux ensuite.
+Ne pas utiliser `setx PATH` : sa limite de 1024 caracteres peut tronquer
+le `PATH` existant.
 
 ### 3. Node.js et npm
 
@@ -129,6 +125,8 @@ npm --version
 ```
 
 ### 4. JDK 17
+
+Uniquement pour construire l'application Android.
 
 Installer un JDK 17 x64, par exemple [Microsoft Build of OpenJDK 17](https://learn.microsoft.com/java/openjdk/download). Adapter le chemin au repertoire reel, puis executer dans `cmd.exe` :
 
@@ -146,6 +144,9 @@ javac -version
 Les deux commandes doivent afficher Java 17.
 
 ### 5. Android Studio, SDK, NDK et CMake Android
+
+SDK, NDK et CMake Android sont necessaires uniquement pour construire l'APK.
+Pour installer un APK existant avec ADB, Platform-Tools suffit.
 
 1. Installer [Android Studio](https://developer.android.com/studio).
 2. Ouvrir **Tools > SDK Manager > SDK Platforms** et installer **Android API 37**.
@@ -184,7 +185,23 @@ setx JAVA_TOOL_OPTIONS "-Djavax.net.ssl.trustStoreType=Windows-ROOT"
 
 ### 6. Pilote RTL-SDR Windows
 
-Pour la reception physique, installer **WinUSB** sur l'interface RTL-SDR avec [Zadig](https://zadig.akeo.ie/). Dans Zadig, choisir **Options > List All Devices**, selectionner l'interface RTL2832U correcte, choisir WinUSB, puis installer le pilote. Cette etape n'est pas necessaire pour compiler ou lire les WAV.
+Pour la reception physique sous Windows, l'**interface 0** de la cle RTL-SDR
+doit utiliser **WinUSB**. Si ce pilote est deja installe et que la reception
+fonctionne, aucune modification n'est necessaire.
+
+Sinon, brancher la cle puis ouvrir [Zadig](https://zadig.akeo.ie/) :
+
+1. Choisir **Options > List All Devices**.
+2. Selectionner **Bulk-In, Interface 0** de la cle RTL2832U
+   (le nom peut varier ; verifier l'identifiant USB et l'interface 0).
+3. Choisir **WinUSB**, puis **Install Driver** ou **Replace Driver**.
+
+**Attention : ne pas remplacer le pilote de l'interface 1, d'un controleur
+USB ou de l'interface ADB de la tablette.** Le remplacement du pilote DVB-T
+de l'interface 0 peut empecher l'utilisation TV jusqu'a restauration du pilote.
+
+Zadig n'est necessaire ni pour compiler, ni pour lire les WAV, ni pour recevoir
+sur Android : l'application utilise directement la permission USB Android.
 
 ## Compilation Windows
 
@@ -196,32 +213,38 @@ cmake -S . -B build -G Ninja \
   -DCMAKE_PREFIX_PATH=C:/msys64/ucrt64
 cmake --build build
 ctest --test-dir build --output-on-failure
-npm install
-npm run ui:build
 ```
 
 Le build produit notamment `cospas-c-api.dll`, `cospas-cli.exe` et les executables de test.
 
+Puis, dans **cmd.exe**, a la racine du depot :
+
+```bat
+npm install
+npm run ui:build
+```
+
 ## Lancer l'application sous Windows
 
-Verifier que `C:\msys64\ucrt64\bin` est dans le `PATH`, puis lancer depuis la racine du depot, dans MSYS2 UCRT64 :
+Verifier que `C:\msys64\ucrt64\bin` est dans le `PATH`, puis lancer depuis la racine du depot, dans **cmd.exe** :
 
-```bash
+```bat
 npm run ui:start
 ```
 
 Ouvrir <http://127.0.0.1:4173> dans Chrome ou Edge. Le serveur ecoute uniquement sur loopback. Pour changer le port :
 
-```bash
-SARSAT_UI_PORT=4180 npm run ui:start
+```bat
+set "SARSAT_UI_PORT=4180"
+npm run ui:start
 ```
 
 Le pont lance `build/cospas-cli.exe` et ne transporte aucun I/Q brut. Pour tester le moteur avant l'interface :
 
-```bash
-./build/cospas-cli.exe --help
-./build/cospas-cli.exe devices --json
-./build/cospas-cli.exe decode --input ./samples/sgb.wav --sgb-only
+```bat
+.\build\cospas-cli.exe --help
+.\build\cospas-cli.exe devices --json
+.\build\cospas-cli.exe decode --input .\samples\sgb.wav --sgb-only
 ```
 
 En cas de DLL introuvable, rouvrir le terminal puis executer `where.exe libfftw3f-3.dll` et `where.exe libusb-1.0.dll`.
