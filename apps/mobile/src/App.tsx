@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ComponentRef, type ReactNode } from "react";
 import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
   type TextStyle, type ViewStyle } from "react-native";
 import { Picker } from "@react-native-picker/picker";
@@ -127,7 +127,7 @@ function Signal({ entry }: { entry: Entry | undefined }) {
       </>}
     </View>;
 }
-function FrameTable({ entries, active, select, compact = false }: {
+const FrameTable = memo(function FrameTable({ entries, active, select, compact = false }: {
   entries: Entry[]; active: Entry | undefined; select: (id: number) => void; compact?: boolean;
 }) {
   const rows = useRef<ComponentRef<typeof ScrollView>>(null);
@@ -185,8 +185,8 @@ function FrameTable({ entries, active, select, compact = false }: {
         </View>
       </ScrollView>}
   </View>;
-}
-function FrameDetail({ entry, compact = false }: { entry: Entry | undefined; compact?: boolean }) {
+});
+const FrameDetail = memo(function FrameDetail({ entry, compact = false }: { entry: Entry | undefined; compact?: boolean }) {
   const [height, setHeight] = useState(0);
   const [headerHeight, setHeaderHeight] = useState(0);
   const fieldBudget = Math.max(0, Math.floor((height - headerHeight - 68) / 36));
@@ -240,8 +240,8 @@ function FrameDetail({ entry, compact = false }: { entry: Entry | undefined; com
     onLayout={event => setHeight(event.nativeEvent.layout.height)}>{content}</View> :
     <ScrollView key={entry?.id} style={s.fill} contentContainerStyle={s.fullDetail}
       accessibilityLabel="Selected frame details" nestedScrollEnabled>{content}</ScrollView>;
-}
-function MapPanel({ entry, compact = false }: { entry: Entry | undefined; compact?: boolean }) {
+});
+const MapPanel = memo(function MapPanel({ entry, compact = false }: { entry: Entry | undefined; compact?: boolean }) {
   const position = entry && beaconPosition(entry.frame);
   return <View style={s.mapPane} accessibilityLabel="Beacon map">
     <Text style={s.h3}>MAP</Text>
@@ -259,7 +259,7 @@ function MapPanel({ entry, compact = false }: { entry: Entry | undefined; compac
       </View>
     </>}
   </View>;
-}
+});
 function Readout({ label, children }: { label: string; children: ReactNode }) {
   return <View style={s.readout}><Text style={s.readoutLabel}>{label}</Text><Text style={s.readoutValue} numberOfLines={1}>{children}</Text></View>;
 }

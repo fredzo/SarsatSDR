@@ -212,13 +212,13 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
   return <section style={{ margin: compact ? 0 : "0 18px", height: compact ? height : undefined, display: "flex", flexDirection: "column", background: "#000", border: "1px solid #335555", borderRadius: 3, overflow: "hidden" }}
     aria-label="Spectrum and waterfall 406 to 406.100 MHz">
     <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "1fr auto 1fr", gap: compact ? 4 : 0, alignItems: "center", justifyItems: compact ? "center" : undefined, padding: compact ? "5px 4px" : "9px 12px", font: `10px ${mono}`, background: "#001000", color: "#00ffff" }}>
-      <span>FFT <b style={{ marginLeft: 10 }}>406.000 — 406.100 MHz</b></span>
+      {!compact && <span>FFT <b style={{ marginLeft: 10 }}>406.000 — 406.100 MHz</b></span>}
       <div style={{ display: "flex" }}>
         <DetectionActivity generation="FGB" detections={fgbDetections} />
         <DetectionActivity generation="SGB" detections={sgbDetections} />
       </div>
-      <span style={{ textAlign: "right" }}>{relative ? "Relative level · WAV" : `Estimated dBm · offset ${calibrationDb.toFixed(1)} dB`}</span></div>
-    <canvas ref={fft} style={{ display: "block", width: "100%", height: compact ? Math.max(70, ((height ?? 400) - 80) * .52) : 230, flexShrink: 0 }} aria-label="Measured FFT spectrum" />
+      {!compact && <span style={{ textAlign: "right" }}>{relative ? "Relative level · WAV" : `Estimated dBm · offset ${calibrationDb.toFixed(1)} dB`}</span>}</div>
+    <canvas ref={fft} style={{ display: "block", width: "100%", height: compact ? Math.max(70, ((height ?? 400) - 60) * .52) : 230, flexShrink: 0 }} aria-label="Measured FFT spectrum" />
     <div style={{ display: "flex", flex: compact ? 1 : undefined, minHeight: 0, borderTop: "1px solid #003333" }}>
       <span style={{ width: 40, padding: "8px 3px", boxSizing: "border-box", color: "#99baba", font: `9px ${mono}`,
         display: "flex", flexDirection: "column", justifyContent: "space-between" }}>

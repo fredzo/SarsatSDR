@@ -52,8 +52,8 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
   sgbDetections: number; fgbDetections: number;
   compact?: boolean; height?: number;
 }) {
-  const fftHeight = compact ? Math.max(70, ((height ?? 400) - 80) * .52) : 230;
-  const waterfallHeight = compact ? Math.max(30, (height ?? 400) - fftHeight - 80) : 180;
+  const fftHeight = compact ? Math.max(70, ((height ?? 400) - 60) * .52) : 230;
+  const waterfallHeight = compact ? Math.max(30, (height ?? 400) - fftHeight - 60) : 180;
   const [width, setWidth] = useState(0);
   const [trace, setTrace] = useState<number[]>([]);
   const [frame, setFrame] = useState<WaterfallFrame | null>(null);
@@ -133,12 +133,12 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
 
   return <View style={[styles.scope, compact && { marginHorizontal: 0, height }]} accessibilityLabel="Spectrum and waterfall 406 to 406.100 MHz">
     <View style={[styles.title, compact && { flexDirection: "column", gap: 4, paddingVertical: 5, paddingHorizontal: 4 }]}>
-      <Text style={[styles.titleText, compact && { flex: 0 }]}>FFT  406.000 — 406.100 MHz</Text>
+      {!compact && <Text style={[styles.titleText, compact && { flex: 0 }]}>FFT  406.000 — 406.100 MHz</Text>}
       <View style={{ flexDirection: "row" }}>
         <DetectionActivity generation="FGB" detections={fgbDetections} />
         <DetectionActivity generation="SGB" detections={sgbDetections} />
       </View>
-      <Text style={[styles.titleText, { textAlign: "right" }, compact && { flex: 0 }]}>{relative ? "Relative level · WAV" : `Estimated dBm · offset ${calibrationDb.toFixed(1)} dB`}</Text></View>
+      {!compact && <Text style={[styles.titleText, { textAlign: "right" }]}>{relative ? "Relative level · WAV" : `Estimated dBm · offset ${calibrationDb.toFixed(1)} dB`}</Text>}</View>
     <View onLayout={(event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width)}>
       <Canvas style={{ width: "100%", height: fftHeight, backgroundColor: "#001000" }}>
         <Path path={grid} style="stroke" color="#335555" strokeWidth={1}><DashPathEffect intervals={[3, 3]} /></Path>
