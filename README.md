@@ -29,58 +29,202 @@ aussi en ligne de commande, sans interface.
 - Lecture temps reel des neuf captures embarquees ; ouverture de WAV utilisateur
   sur Android. PCM stereo I/Q 8 bits, 16 bits et flottant 32 bits.
 
-L'identite visuelle reprend [SarsatJRXApp](https://github.com/fredzo/SarsatJRXApp/) :
-fonds sombres vert/noir, en-tete petrole, accents cyan, texte blanc,
-icones Lucide et boutons de navigation cartographique bleus.
-
 ## Organisation
 
 - `native/cospas-core` : moteur portable, tables DSP integrees et API C.
 - `native/sources` : WAV, RTL2832, tuner R820 et transport USB.
 - `native/cospas-cli` : executable headless et evenements JSONL.
 - `native/android` : compilation Android et adaptateur JNI.
-- `apps/mobile` : application Expo / React Native et interface Web partagee.
+- `apps/mobile` : application Expo / React Native et interface Web partagée.
 - `apps/diagnostic-web` : serveur HTTP/WebSocket local et tests UI, sans front distinct.
 - `packages/shared` : protocole, profils de lecture et affichage.
 - `samples` : captures de regression, attentes documentees et profils JSON.
 - `spec` : specifications FGB/SGB.
 
-Les archives locales ne sont ni compilees, ni requises pour construire le projet.
-Les tables FIR, PN, repliques FFT et registres sont integrees dans
-`native/cospas-core/dsp_tables.hpp` ; aucune extraction de binaire n'est effectuee.
-[CONTEXT.md](CONTEXT.md) decrit les objectifs architecturaux, pas une liste de
-fonctionnalites toutes disponibles.
+
+## Installation des prerequis sous Windows
+
+Cette procedure part d'un poste Windows 10/11 x64 vierge. Utiliser **MSYS2 UCRT64** pour compiler le moteur Windows et **Invite de commandes Windows (`cmd.exe`)** pour Node.js, Android et ADB. Installer le depot dans un chemin court sans accent, par exemple `C:\src\sarsat-sdr`.
+
+### 1. Git et chemins longs
+
+Installer [Git for Windows](https://git-scm.com/download/win), puis verifier dans `cmd.exe` :
+
+```bat
+git --version
+```
+
+Activer les chemins longs dans une **Invite de commandes lancee en tant qu'administrateur**, puis redemarrer Windows :
+
+```bat
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v LongPathsEnabled /t REG_DWORD /d 1 /f
+```
+
+Cloner le depot :
+
+```bat
+mkdir C:\src
+cd /d C:\src
+git clone <URL_DU_DEPOT> sarsat-sdr
+cd /d C:\src\sarsat-sdr
+```
+
+### 2. MSYS2 UCRT64, compilateur et bibliotheques natives
+
+1. Installer [MSYS2](https://www.msys2.org/) dans `C:\msys64`.
+2. Ouvrir **MSYS2 UCRT64**, et non le terminal MSYS ou MINGW64.
+3. Mettre le systeme a jour. Relancer UCRT64 et repeter si le terminal demande de se fermer :
+
+```bash
+pacman -Syu
+```
+
+4. Installer la chaine complete :
+
+```bash
+pacman -S --needed \
+  mingw-w64-ucrt-x86_64-gcc \
+  mingw-w64-ucrt-x86_64-cmake \
+  mingw-w64-ucrt-x86_64-ninja \
+  mingw-w64-ucrt-x86_64-python \
+  mingw-w64-ucrt-x86_64-fftw \
+  mingw-w64-ucrt-x86_64-libusb \
+  mingw-w64-ucrt-x86_64-pkgconf
+```
+
+5. Verifier dans UCRT64 :
+
+```bash
+gcc --version
+g++ --version
+cmake --version
+ninja --version
+python --version
+pkg-config --modversion fftw3f
+pkg-config --modversion libusb-1.0
+```
+
+Ajouter `C:\msys64\ucrt64\bin` au `PATH` utilisateur. La commande suivante conserve le `PATH` utilisateur existant :
+
+```bat
+for /f "tokens=2,*" %A in ('reg query HKCU\Environment /v Path 2^>nul ^| findstr /i "Path"') do set "USER_PATH=%B"
+setx PATH "%USER_PATH%;C:\msys64\ucrt64\bin"
+```
+
+Si aucune variable `Path` utilisateur n'existe encore, utiliser :
+
+```bat
+setx PATH "C:\msys64\ucrt64\bin"
+```
+
+Fermer et rouvrir les terminaux apres `setx`. Ne pas executer plusieurs fois la commande d'ajout sans verifier le contenu du `PATH`.
+
+### 3. Node.js et npm
+
+Installer **Node.js 22 LTS, version 22.12 ou superieure**, depuis [nodejs.org](https://nodejs.org/en/download). Node.js 24+ est egalement accepte. Verifier :
+
+```bat
+node --version
+npm --version
+```
+
+### 4. JDK 17
+
+Installer un JDK 17 x64, par exemple [Microsoft Build of OpenJDK 17](https://learn.microsoft.com/java/openjdk/download). Adapter le chemin au repertoire reel, puis executer dans `cmd.exe` :
+
+```bat
+setx JAVA_HOME "C:\Program Files\Microsoft\jdk-17"
+```
+
+Ajouter ensuite `%JAVA_HOME%\bin` au `PATH` depuis **Parametres systeme avances > Variables d'environnement**, afin d'eviter les expansions incorrectes avec `setx`. Dans une nouvelle Invite de commandes :
+
+```bat
+java -version
+javac -version
+```
+
+Les deux commandes doivent afficher Java 17.
+
+### 5. Android Studio, SDK, NDK et CMake Android
+
+1. Installer [Android Studio](https://developer.android.com/studio).
+2. Ouvrir **Tools > SDK Manager > SDK Platforms** et installer **Android API 37**.
+3. Dans **SDK Tools**, activer **Show Package Details** et installer :
+   - Android SDK Platform-Tools ;
+   - Android SDK Build-Tools requis par le projet ;
+   - Android SDK Command-line Tools (latest) ;
+   - NDK (Side by side) **27.1.12297006** ;
+   - CMake **3.22.1**.
+4. Definir les variables, en supposant le chemin SDK standard :
+
+```bat
+setx ANDROID_HOME "%LOCALAPPDATA%\Android\Sdk"
+setx ANDROID_SDK_ROOT "%LOCALAPPDATA%\Android\Sdk"
+```
+
+Ajouter ensuite ces deux entrees au `PATH` utilisateur depuis **Variables d'environnement** :
+
+```text
+%ANDROID_HOME%\platform-tools
+%ANDROID_HOME%\cmdline-tools\latest\bin
+```
+
+Rouvrir `cmd.exe` puis verifier :
+
+```bat
+adb version
+sdkmanager --list
+```
+
+Derriere un proxy TLS d'entreprise, utiliser si necessaire le magasin de certificats Windows :
+
+```bat
+setx JAVA_TOOL_OPTIONS "-Djavax.net.ssl.trustStoreType=Windows-ROOT"
+```
+
+### 6. Pilote RTL-SDR Windows
+
+Pour la reception physique, installer **WinUSB** sur l'interface RTL-SDR avec [Zadig](https://zadig.akeo.ie/). Dans Zadig, choisir **Options > List All Devices**, selectionner l'interface RTL2832U correcte, choisir WinUSB, puis installer le pilote. Cette etape n'est pas necessaire pour compiler ou lire les WAV.
 
 ## Compilation Windows
 
-Prerequis : CMake 3.24+, Ninja, compilateurs C11/C++20, Python 3 pour les tests,
-FFTW simple precision et libusb 1.0.
-Les DLL du compilateur, FFTW et libusb doivent figurer dans `PATH`, y compris
-pendant les tests et lors du lancement du pont local.
+Dans **MSYS2 UCRT64**, a la racine du depot :
 
-Exemple MSYS2 UCRT64 :
-
-```powershell
-rtk proxy cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=D:\msys64\ucrt64
-rtk proxy cmake --build build
-rtk ctest --test-dir build --output-on-failure
+```bash
+cmake -S . -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=C:/msys64/ucrt64
+cmake --build build
+ctest --test-dir build --output-on-failure
+npm install
+npm run ui:build
 ```
 
-Le build fournit `cospas-core`, `cospas-rtl-control`, `cospas-c-api.dll`,
-`cospas-cli.exe` et les executables de test.
+Le build produit notamment `cospas-c-api.dll`, `cospas-cli.exe` et les executables de test.
 
-Pour l'interface, ajouter Node.js 22.12+ (ou 24+) et npm :
+## Lancer l'application sous Windows
 
-```powershell
-rtk npm install
-rtk proxy npm run ui:build
-rtk proxy npm run ui:start
+Verifier que `C:\msys64\ucrt64\bin` est dans le `PATH`, puis lancer depuis la racine du depot, dans MSYS2 UCRT64 :
+
+```bash
+npm run ui:start
 ```
 
-Ouvrir **http://127.0.0.1:4173**. Le serveur ecoute seulement sur loopback ;
-`SARSAT_UI_PORT` change son port. La production sert `apps/mobile/dist`, meme
-interface que sur Android ; aucun ancien front de diagnostic n'est conserve.
-Le pont lance `build\cospas-cli.exe` et ne transporte aucun I/Q brut.
+Ouvrir <http://127.0.0.1:4173> dans Chrome ou Edge. Le serveur ecoute uniquement sur loopback. Pour changer le port :
+
+```bash
+SARSAT_UI_PORT=4180 npm run ui:start
+```
+
+Le pont lance `build/cospas-cli.exe` et ne transporte aucun I/Q brut. Pour tester le moteur avant l'interface :
+
+```bash
+./build/cospas-cli.exe --help
+./build/cospas-cli.exe devices --json
+./build/cospas-cli.exe decode --input ./samples/sgb.wav --sgb-only
+```
+
+En cas de DLL introuvable, rouvrir le terminal puis executer `where.exe libfftw3f-3.dll` et `where.exe libusb-1.0.dll`.
 
 ## Application Android
 
@@ -96,15 +240,70 @@ Le tuner attend 10 ms avant chacun des deux controles de verrouillage PLL,
 notamment apres debranchement/rebranchement. Un verrouillage absent reste une erreur.
 
 Prerequis : JDK 17, SDK Android platform 37, NDK 27.1.12297006 et CMake 3.22.1.
-Build local :
+## Deployer l'application sur un appareil Android
 
-```powershell
-cd apps\mobile
-rtk proxy npx expo prebuild -p android --no-install
-cd android
-rtk proxy .\gradlew.bat assembleRelease --max-workers=2
-rtk proxy adb install -r app\build\outputs\apk\release\app-release.apk
+### 1. Preparer la tablette
+
+1. Dans **Parametres > A propos de la tablette**, toucher sept fois **Numero de build**.
+2. Ouvrir **Options pour les developpeurs** et activer **Debogage USB**.
+3. Connecter un cable USB transportant les donnees et accepter l'empreinte RSA affichee.
+4. Dans `cmd.exe`, verifier la connexion :
+
+```bat
+adb kill-server
+adb start-server
+adb devices -l
 ```
+
+L'etat doit etre `device`. S'il est `unauthorized`, deverrouiller la tablette et accepter l'autorisation. Si l'appareil est absent, installer le pilote USB du constructeur ; le Google USB Driver est disponible dans le SDK Manager pour les appareils Google.
+
+### 2. Generer l'APK release
+
+Depuis `cmd.exe`, a la racine du depot :
+
+```bat
+npm install
+cd /d apps\mobile
+npx expo prebuild -p android --no-install
+cd android
+gradlew.bat assembleRelease --max-workers=2
+```
+
+L'APK est genere dans :
+
+```text
+apps\mobile\android\app\build\outputs\apk\release\app-release.apk
+```
+
+### 3. Installer ou mettre a jour l'application
+
+Depuis `apps\mobile\android` :
+
+```bat
+adb install -r app\build\outputs\apk\release\app-release.apk
+```
+
+Avec plusieurs appareils, utiliser le numero de serie retourne par `adb devices -l` :
+
+```bat
+adb -s <SERIAL> install -r app\build\outputs\apk\release\app-release.apk
+```
+
+Pour une installation propre, qui efface les donnees precedentes :
+
+```bat
+adb uninstall org.adrasec.f4jrx.sarsatsdr
+adb install app\build\outputs\apk\release\app-release.apk
+```
+
+Pour diagnostiquer un crash ou un probleme USB :
+
+```bat
+adb logcat -c
+adb logcat | findstr /i "SarsatSDR AndroidRuntime libusb FFTW"
+```
+
+L'APK release utilise actuellement la cle debug Expo. Configurer une vraie cle de signature avant diffusion. Les profils EAS `preview` et `production` sont fournis ; une compilation EAS sans `--local` televerse le code vers les serveurs Expo.
 
 Sous Windows, activer LongPathsEnabled et utiliser Ninja >= 1.12 si necessaire.
 Derriere un proxy TLS d'entreprise, le magasin de certificats Windows peut etre
@@ -173,14 +372,14 @@ ou la derniere trame contenant une position.
 
 ## Mode headless
 
-```powershell
-rtk proxy .\build\cospas-cli.exe --help
-rtk proxy .\build\cospas-cli.exe devices --json
-rtk proxy .\build\cospas-cli.exe decode --input .\samples\sgb.wav --sgb-only
-rtk proxy .\build\cospas-cli.exe decode --input .\samples\sgb-cnes.wav --sgb-only --remove-dc
-rtk proxy .\build\cospas-cli.exe decode --input .\samples\fgb.wav --fgb-only --noise-preroll-ms 2000
-rtk proxy .\build\cospas-cli.exe decode --input .\samples\sgb.wav --sgb-only --block-samples 4093 --worker-queue 2
-rtk proxy .\build\cospas-cli.exe receive --frequency-hz 406050000 --gain-index 8 --agc --seconds 5 --json
+```bat
+.\build\cospas-cli.exe --help
+.\build\cospas-cli.exe devices --json
+.\build\cospas-cli.exe decode --input .\samples\sgb.wav --sgb-only
+.\build\cospas-cli.exe decode --input .\samples\sgb-cnes.wav --sgb-only --remove-dc
+.\build\cospas-cli.exe decode --input .\samples\fgb.wav --fgb-only --noise-preroll-ms 2000
+.\build\cospas-cli.exe decode --input .\samples\sgb.wav --sgb-only --block-samples 4093 --worker-queue 2
+.\build\cospas-cli.exe receive --frequency-hz 406050000 --gain-index 8 --agc --seconds 5 --json
 ```
 
 Sorties : `0` avec trame, `2` sans trame, `1` sur erreur. `devices` et
@@ -226,12 +425,12 @@ Les plans FFTW imposent de serialiser creation et appels par lots.
 
 ## Validation
 
-```powershell
-rtk ctest --test-dir build --output-on-failure
-rtk ctest --test-dir build -L samples --output-on-failure
-rtk ctest --test-dir build -L rtl --output-on-failure
-rtk proxy npm run ui:test
-rtk proxy npm run ui:build
+```bat
+ctest --test-dir build --output-on-failure
+ctest --test-dir build -L samples --output-on-failure
+ctest --test-dir build -L rtl --output-on-failure
+npm run ui:test
+npm run ui:build
 ```
 
 Les neuf captures sont verifiees par lots, en incremental et en worker, avec
@@ -250,9 +449,19 @@ Les WAV sont encore charges en entier ; la reception USB utilise des files borne
 Les regressions sur captures ne remplacent pas des mesures RF de sensibilite,
 de faux positifs et d'endurance.
 
-FFTW 3.3.10 (GPL) et libusb 1.0.30 (LGPL) sont disponibles dans
-`native/third_party`, avec leurs licences. L'APK lie FFTW statiquement et releve
-donc de la GPL. Lucide utilise la licence ISC et Leaflet la licence BSD-2-Clause.
-Les conditions des composants et donnees tiers restent applicables ;
-aucun droit de redistribution supplementaire n'est implique.
-La licence du projet et des donnees DSP doit etre clarifiee avant diffusion.
+## Licence
+ 
+Ce projet est distribué sous la licence GNU General Public License
+version 3.0 ou ultérieure (`GPL-3.0-or-later`).
+
+L’application Android lie statiquement FFTW et constitue par conséquent
+un ensemble distribué sous GNU GPL version 3 ou ultérieure.
+
+Les composants tiers restent soumis à leurs licences respectives,
+notamment libusb sous LGPL-2.1-or-later, Lucide sous ISC/MIT et
+Leaflet sous BSD-2-Clause.
+ 
+Consultez le fichier [LICENSE](LICENSE) pour le texte complet.
+ 
+Les composants tiers conservent leurs licences respectives.
+Consultez [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
