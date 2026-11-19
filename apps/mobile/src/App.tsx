@@ -5,7 +5,9 @@ import { Picker } from "@react-native-picker/picker";
 import Slider from "@react-native-community/slider";
 import Svg, { Path, Polyline } from "react-native-svg";
 import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileText, FolderOpen, MapPin,
-  Navigation, Play, BoomBox, RadioTower, RefreshCw, Settings as SettingsIcon, Square, Usb, type LucideIcon } from "lucide-react-native";
+  Navigation, Play, BoomBox, RadioTower, RefreshCw, Settings as SettingsIcon, Square, Usb, type LucideIcon, 
+  ArrowBigRight,
+  ArrowBigLeft} from "lucide-react-native";
 import { startSchema, playbackConfiguration, type Frame, type Info, type Settings, type SpectrumEvent,
   type Diagnostics, type AcquisitionChannel, type ServerEvent } from "@sarsat/shared/protocol";
 import { beaconPosition, googleMapsUrl, wazeUrl } from "@sarsat/shared/beacon-position";
@@ -568,7 +570,7 @@ export default function App() {
           disabled={activeIndex < 0 || activeIndex + direction < 0 || activeIndex + direction >= entries.length}
           onPress={() => setSelected(entries[activeIndex + direction].id)}
           style={[s.navArrow, (activeIndex < 0 || activeIndex + direction < 0 || activeIndex + direction >= entries.length) && { opacity: .3 }]}>
-          {direction === -1 ? <ChevronLeft size={22} color="#00ffff" /> : <ChevronRight size={22} color="#00ffff" />}
+          {direction === -1 ? <ArrowBigLeft size={22} color="#00ffff" /> : <ArrowBigRight size={22} color="#00ffff" />}
         </Pressable>;
         return <View key={name} style={[s.navItem, name === "Frames" && { flex: 1.8 }]}>
           {name === "Frames" && arrow(-1)}
@@ -621,7 +623,7 @@ const s = StyleSheet.create({
   navTab: { flex: 1, minWidth: 0, minHeight: 52, alignItems: "center", justifyContent: "center", gap: 3, borderRadius: 12 },
   navSelected: { backgroundColor: "#004444" },
   navLabel: { fontSize: 10, color: "#98a3a3" },
-  navArrow: { minWidth: 28, minHeight: 48, alignItems: "center", justifyContent: "center" },
+  navArrow: { minWidth: 48, minHeight: 48, alignItems: "center", justifyContent: "center" },
   row: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 10 },
   button: { flexDirection: "row", gap: 8, borderWidth: 1, borderColor: "#335555", borderRadius: 12, paddingVertical: 10, paddingHorizontal: 16, backgroundColor: "#003333", minHeight: 48, justifyContent: "center", alignItems: "center" },
   buttonText: { color: "#ffffff", fontSize: 13 },
