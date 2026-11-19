@@ -246,18 +246,24 @@ const FrameDetail = memo(function FrameDetail({ entry, compact = false }: { entr
 const MapPanel = memo(function MapPanel({ entry, compact = false }: { entry: Entry | undefined; compact?: boolean }) {
   const position = entry && beaconPosition(entry.frame);
   return <View style={s.mapPane} accessibilityLabel="Beacon map">
-    <Text style={s.h3}>MAP</Text>
+    <View style={s.mapHeader}>
+      <Text style={[s.h3, { marginBottom: 0 }]}>MAP</Text>
+      {entry && position && <Text style={[s.detail, s.mono, { flexShrink: 1, marginTop: 0 }]}>
+        {position.lat.toFixed(6)}, {position.lon.toFixed(6)}
+        {!compact && ` · ${entry.frame.generation === 1 ? "FGB" : "SGB"} · ${entry.frame.correctedHex} · ${entry.frame.timeSeconds.toFixed(3)} s`}
+      </Text>}
+    </View>
     {!entry || !position ? <View style={s.emptyPane}><Text style={s.empty}>No decoded beacon position.</Text></View> : <>
-      <Text style={[s.detail, s.mono]}>{position.lat.toFixed(6)}, {position.lon.toFixed(6)}</Text>
-      {!compact && <Text style={s.p}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.frame.correctedHex} · {entry.frame.timeSeconds.toFixed(3)} s</Text>}
-      <View style={[s.fill, { marginTop: 8 }]}><BeaconMap lat={position.lat} lon={position.lon} /></View>
-      <View style={[s.row, { marginTop: 8, flexWrap: "nowrap", gap: 6 }]}>
-        <Pressable accessibilityRole="link" accessibilityLabel="Google Maps" style={s.mapLink}
-          onPress={() => { void Linking.openURL(googleMapsUrl(position.lat, position.lon)); }}>
-          <MapPin size={18} color="#fff" /><Text style={s.mapLinkText}>Google Maps</Text></Pressable>
-        <Pressable accessibilityRole="link" accessibilityLabel="Waze" style={[s.mapLink, { backgroundColor: "#087899" }]}
-          onPress={() => { void Linking.openURL(wazeUrl(position.lat, position.lon)); }}>
-          <Navigation size={18} color="#fff" /><Text style={s.mapLinkText}>Waze</Text></Pressable>
+      <View style={s.mapContent}>
+        <View style={s.fill}><BeaconMap lat={position.lat} lon={position.lon} /></View>
+        <View style={s.mapActions}>
+          <Pressable accessibilityRole="link" accessibilityLabel="Google Maps" style={s.mapLink}
+            onPress={() => { void Linking.openURL(googleMapsUrl(position.lat, position.lon)); }}>
+            <MapPin size={18} color="#fff" /><Text style={s.mapLinkText}>{"Google\nMaps"}</Text></Pressable>
+          <Pressable accessibilityRole="link" accessibilityLabel="Waze" style={[s.mapLink, { backgroundColor: "#087899" }]}
+            onPress={() => { void Linking.openURL(wazeUrl(position.lat, position.lon)); }}>
+            <Navigation size={18} color="#fff" /><Text style={s.mapLinkText}>Waze</Text></Pressable>
+        </View>
       </View>
     </>}
   </View>;
@@ -415,8 +421,6 @@ export default function App() {
     } else void Share.share({ title: "sarsat-decodes.json", message: json });
   }
   const activeFrame = entries.find(entry => entry.id === selected) ?? entries.at(-1);
-  const located = activeFrame && beaconPosition(activeFrame.frame) ? activeFrame
-    : [...entries].reverse().find(entry => beaconPosition(entry.frame));
   const elapsed = session && metrics ? Math.max(0, metrics.samples / session.sampleRateHz - (session.noisePrerollMs ?? 0) / 1000) : 0;
   const d = metrics?.diagnostics;
   const decoderLocked = busy || !displayedSettings || (tab === "Player" && useSampleProfile);
@@ -453,20 +457,45 @@ export default function App() {
     {tab === "Detection" && <View style={s.dashboard} onLayout={event => setDashboardHeight(event.nativeEvent.layout.height)}>
       <View style={s.dashboardColumn}>
         <View style={s.dashboardTop} accessibilityLabel="Detection spectrum">{spectrum(true)}</View>
-        <View style={s.dashboardBottom}>{frameActions}<FrameTable entries={entries} active={activeFrame} select={setSelected} compact /></View>
+        <View style={s.dashboardBottom}>
+          <Text style={[s.h3, { marginBottom: 0, padding: 8 }]}>FRAMES ({entries.length})</Text>
+          <FrameTable entries={entries} active={activeFrame} select={setSelected} compact />
+        </View>
       </View>
       <View style={s.dashboardColumn}>
         <View style={s.dashboardTop}><FrameDetail entry={activeFrame} compact /></View>
-        <View style={s.dashboardBottom}><MapPanel entry={located} compact /></View>
+        <View style={s.dashboardBottom}><MapPanel entry={activeFrame} compact /></View>
       </View>
     </View>}
     {tab === "Frames" && <View style={s.split}>
       <View style={[s.splitColumn, { flex: 2 }]}>{frameActions}<FrameTable entries={entries} active={activeFrame} select={setSelected} /></View>
       <View style={[s.splitColumn, { flex: 3 }]}><FrameDetail entry={activeFrame} /></View>
     </View>}
-    {tab === "Map" && <View style={s.fixedPage}><MapPanel entry={located} /></View>}
+    {tab === "Map" && <View style={s.fixedPage}><MapPanel entry={activeFrame} /></View>}
     {(tab === "Receiver" || tab === "Player" || tab === "Signal" || tab === "Settings") &&
     <ScrollView style={s.fill} contentContainerStyle={{ paddingBottom: 12 }}>
+        {tab === "Player" && <View style={s.panel}><Text style={s.h2}>Player <Text style={s.h2Small}>Native I/Q capture playback</Text></Text>
+          <View style={s.row}>
+            <Select label="WAV capture" disabled={busy} value={sample} onChange={setSample}
+              items={(info?.samples ?? []).map(name => ({ label: name, value: name }))} />
+            {transport?.pickFile && <Button icon={FolderOpen} title="OPEN WAV…" disabled={busy} onPress={() => { void pick(); }} />}
+            <Check label="Validated capture profile" value={useSampleProfile} disabled={busy} onChange={setUseSampleProfile} />
+            <Check label="Explicit DC removal" value={useSampleProfile ? playback?.removeDc ?? false : removeDc}
+              disabled={busy || useSampleProfile} onChange={setRemoveDc} />
+            <NumberField label="Noise preroll · ms" disabled={busy || useSampleProfile}
+              value={useSampleProfile ? playback?.noisePrerollMs ?? 0 : preroll} onChange={setPreroll} />
+            <Button kind="primary" icon={Play} title="PLAY" disabled={busy || !connected || !settings} onPress={() => start("sample")} />
+            <Button icon={Square} title="STOP" disabled={!busy} onPress={stop} />
+          </View>
+          <View accessibilityLabel="Capture progress" style={s.progress}>
+            <View style={[s.progressBar, { width: `${Math.min(100, Math.min(elapsed, duration) / duration * 100)}%` }]} /></View>
+          {useSampleProfile ? playback ? <Text style={s.p}>Active profile: {playback.settings.fgb ? "FGB" : ""}{playback.settings.fgb && playback.settings.sgb ? " + " : ""}{playback.settings.sgb ? "SGB" : ""}.
+            {playback.settings.fgb && ` OverPeak ${playback.settings.fgbOverPeakDb} dB; average ${playback.settings.fgbAverage}; RunTime ${playback.settings.fgbRuntimeMs} ms; Alpha ${playback.settings.fgbAlpha}; Beta ${playback.settings.fgbBeta}; Zeta ${playback.settings.fgbZeta}; max BCH-1 errors ${playback.settings.fgbMaxErrors}; max BCH-2 errors ${playback.settings.fgbBch2MaxErrors}; max header errors ${playback.settings.fgbHeaderErrors}.`}
+            </Text>
+            : info ? <Text style={[s.p, { color: "#ff8484" }]}>No validated profile. Select manual mode.</Text>
+            : <Text style={s.p}>Loading capture profiles...</Text>
+            : <Text style={s.p}>Manual mode: DSP settings from Settings, DC removal and noise preroll above.</Text>}
+          </View>}
       {(tab === "Receiver" || tab === "Player") && spectrum()}
       {tab === "Receiver" && <>
         <View style={s.displayControls}>
@@ -505,29 +534,6 @@ export default function App() {
             ["RTL calibration", `${calibrationDb.toFixed(1)} dB`]]} />
         </View>
       </>}
-        {tab === "Player" && <View style={s.panel}><Text style={s.h2}>Player <Text style={s.h2Small}>Native I/Q capture playback</Text></Text>
-          <View style={s.row}>
-            <Select label="WAV capture" disabled={busy} value={sample} onChange={setSample}
-              items={(info?.samples ?? []).map(name => ({ label: name, value: name }))} />
-            {transport?.pickFile && <Button icon={FolderOpen} title="OPEN WAV…" disabled={busy} onPress={() => { void pick(); }} />}
-            <Check label="Validated capture profile" value={useSampleProfile} disabled={busy} onChange={setUseSampleProfile} />
-            <Check label="Explicit DC removal" value={useSampleProfile ? playback?.removeDc ?? false : removeDc}
-              disabled={busy || useSampleProfile} onChange={setRemoveDc} />
-            <NumberField label="Noise preroll · ms" disabled={busy || useSampleProfile}
-              value={useSampleProfile ? playback?.noisePrerollMs ?? 0 : preroll} onChange={setPreroll} />
-            <Button kind="primary" icon={Play} title="PLAY" disabled={busy || !connected || !settings} onPress={() => start("sample")} />
-            <Button icon={Square} title="STOP" disabled={!busy} onPress={stop} />
-          </View>
-          <View accessibilityLabel="Capture progress" style={s.progress}>
-            <View style={[s.progressBar, { width: `${Math.min(100, Math.min(elapsed, duration) / duration * 100)}%` }]} /></View>
-          {useSampleProfile ? playback ? <Text style={s.p}>Active profile: {playback.settings.fgb ? "FGB" : ""}{playback.settings.fgb && playback.settings.sgb ? " + " : ""}{playback.settings.sgb ? "SGB" : ""}.
-            {playback.settings.fgb && ` OverPeak ${playback.settings.fgbOverPeakDb} dB; average ${playback.settings.fgbAverage}; RunTime ${playback.settings.fgbRuntimeMs} ms; Alpha ${playback.settings.fgbAlpha}; Beta ${playback.settings.fgbBeta}; Zeta ${playback.settings.fgbZeta}; max BCH-1 errors ${playback.settings.fgbMaxErrors}; max BCH-2 errors ${playback.settings.fgbBch2MaxErrors}; max header errors ${playback.settings.fgbHeaderErrors}.`}
-            {" "}
-            Native defaults and validated capture adjustments; Receiver settings are unchanged.</Text>
-            : info ? <Text style={[s.p, { color: "#ff8484" }]}>No validated profile. Select manual mode.</Text>
-            : <Text style={s.p}>Loading capture profiles...</Text>
-            : <Text style={s.p}>Manual mode: DSP settings from Settings, DC removal and noise preroll above.</Text>}
-          <Text style={s.p}>Real-time playback; stop and restart from the beginning. Recording and seeking are not available yet.</Text></View>}
 
       {tab === "Signal" && <Signal entry={activeFrame} />}
 
@@ -615,9 +621,12 @@ const s = StyleSheet.create({
   fieldSectionTitle: { fontSize: 11, fontWeight: "bold", color: "#00ffff", marginBottom: 6 },
   fullFieldRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingVertical: 2, borderBottomWidth: 1, borderBottomColor: "#003333" },
   mapPane: { flex: 1, minHeight: 0, padding: 10, backgroundColor: "#001a1a" },
+  mapHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
+  mapContent: { flex: 1, minHeight: 0, flexDirection: "row", gap: 8 },
+  mapActions: { width: 64, gap: 6 },
   emptyPane: { flex: 1, padding: 12, alignItems: "center", justifyContent: "center", gap: 8 },
-  mapLink: { flex: 1, minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, borderRadius: 8, backgroundColor: "#245cad" },
-  mapLinkText: { fontSize: 10, color: "#fff" },
+  mapLink: { minHeight: 72, alignItems: "center", justifyContent: "center", gap: 4, borderRadius: 8, backgroundColor: "#245cad" },
+  mapLinkText: { fontSize: 10, color: "#fff", textAlign: "center" },
   nav: { flexDirection: "row", flexShrink: 0, backgroundColor: "#001a1a", borderTopWidth: 1, borderTopColor: "#335555", paddingVertical: 5, paddingHorizontal: 4, gap: 2 },
   navItem: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center" },
   navTab: { flex: 1, minWidth: 0, minHeight: 52, alignItems: "center", justifyContent: "center", gap: 3, borderRadius: 12 },
@@ -654,7 +663,7 @@ const s = StyleSheet.create({
   h3: { fontSize: 10, letterSpacing: 1, marginBottom: 12, color: "#00ffff", fontWeight: "bold" },
   dt: { color: "#99baba", fontSize: 12 },
   dd: { fontFamily: mono, fontSize: 12, color: "#ffffff" },
-  panel: { margin: 15, marginHorizontal: 18, backgroundColor: "#001a1a", borderWidth: 1, borderColor: "#003333", borderRadius: 12, padding: 17, minHeight: 200 },
+  panel: { margin: 15, marginHorizontal: 18, backgroundColor: "#001a1a", borderWidth: 1, borderColor: "#003333", borderRadius: 12, padding: 17 },
   h2: { fontSize: 12, letterSpacing: 1, marginBottom: 18, color: "#00ffff", fontWeight: "bold" },
   h2Small: { fontSize: 11, fontWeight: "normal", letterSpacing: 0, color: "#99baba" },
   p: { fontSize: 11, color: "#99baba", lineHeight: 19, marginTop: 8 },
