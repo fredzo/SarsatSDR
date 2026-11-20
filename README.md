@@ -287,6 +287,8 @@ appelee par le module Expo local via JNI.
 
 Sources : cle RTL-SDR USB OTG (permission Android et service premier plan),
 captures embarquees et WAV choisi avec `OPEN WAV`.
+Au branchement d'une cle compatible, Android propose **SarsatSDR** comme
+application d'ouverture. La reception se lance ensuite avec le bouton Start.
 Les captures ajoutent environ 350 Mo a l'APK ; un WAV est charge en RAM.
 Le tuner attend 10 ms avant chacun des deux controles de verrouillage PLL,
 notamment apres debranchement/rebranchement. Un verrouillage absent reste une erreur.
