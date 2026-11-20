@@ -1,5 +1,5 @@
-import { memo, useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
-import { Linking, Modal, PanResponder, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
+import { Animated, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
   type TextStyle, type ViewStyle } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import Slider from "@react-native-community/slider";
@@ -191,38 +191,47 @@ const TraceContent = memo(function TraceContent({ series, start, end, pixelsPerS
       })}
   </>;
 });
-function Trace({ title, series, start, spanSamples, width, rate, bits }: {
-  title: string; series: SignalSeries[]; start: number; spanSamples: number; width: number; rate: number; bits?: SignalBits;
+const Trace = memo(function Trace({ title, series, start, end, viewportWidth, pixelsPerSample, translateX, rate, bits }: {
+  title: string; series: SignalSeries[]; start: number; end: number; viewportWidth: number; pixelsPerSample: number;
+  translateX: ReturnType<typeof Animated.multiply>; rate: number; bits?: SignalBits;
 }) {
   const levels = useMemo(() => {
     const values = series.flatMap(({ trace }) => trace.values);
     return values.length ? { minimum: Math.min(...values), maximum: Math.max(...values) } : null;
   }, [series]);
   if (!levels) return <Text style={[s.empty, { padding: 25 }]}>{title}: no trace received</Text>;
-  const pixelsPerSample = width / spanSamples;
   const left = start * pixelsPerSample;
+  const width = (end - start) * pixelsPerSample;
   const showBits = bits && bits.samplesPerBit * pixelsPerSample >= minBitWidth - 1e-6;
   const height = showBits ? 195 : 158;
-  // Cache geometry for a window with half a viewport of overscan on either side.
-  const tile = Math.floor(start / (spanSamples / 2)) * (spanSamples / 2);
-  const timeLabels = [0, .25, .5, .75, 1];
+  const tickStep = viewportWidth / 4;
+  const firstTick = Math.ceil(left / tickStep);
+  const timeLabels = Array.from({ length: Math.floor((left + width) / tickStep) - firstTick + 1 },
+    (_, i) => (firstTick + i) * tickStep);
   return <View style={s.trace}><View style={s.traceHeader}><Text style={s.traceText}>{title}</Text>
     <Text style={[s.traceText, { fontSize: 10 }]}>{levels.minimum.toPrecision(4)} … {levels.maximum.toPrecision(4)}</Text></View>
-    <Svg width="100%" height={height} viewBox={`${left} 0 ${width} ${height}`} accessibilityLabel={title}>
-      {timeLabels.map(f => <Path key={f} d={`M${left + width * f} 0 V140`} stroke="#003333" />)}
-      <TraceContent series={series} start={Math.max(0, tile - spanSamples / 2)} end={tile + spanSamples * 1.5}
-        pixelsPerSample={pixelsPerSample} {...levels} bits={showBits ? bits : undefined} />
-      {timeLabels.map(f => <SvgText key={f} x={left + (f === 0 ? 3 : f === 1 ? width - 3 : width * f)}
-        y={showBits ? 191 : 154} textAnchor={f === 0 ? "start" : f === 1 ? "end" : "middle"}
-        fill="#99baba" fontSize={10}>{((start + spanSamples * f) * 1000 / rate).toFixed(1)} ms</SvgText>)}
-    </Svg></View>;
-}
+    <View style={{ overflow: "hidden", height }}>
+      <Animated.View testID="signal-trace-strip" style={{ position: "absolute", left, width, height, transform: [{ translateX }] }}>
+        <Svg width={width} height={height} viewBox={`${left} 0 ${width} ${height}`} accessibilityLabel={title}>
+          {timeLabels.map(x => <Path key={x} d={`M${x} 0 V140`} stroke="#003333" />)}
+          <TraceContent series={series} start={start} end={end}
+            pixelsPerSample={pixelsPerSample} {...levels} bits={showBits ? bits : undefined} />
+          {timeLabels.map(x => <SvgText key={x} x={x === 0 ? 3 : x} y={showBits ? 191 : 154}
+            textAnchor={x === 0 ? "start" : "middle"} fill="#99baba" fontSize={10}>
+            {(x * 1000 / (pixelsPerSample * rate)).toFixed(1)} ms
+          </SvgText>)}
+        </Svg>
+      </Animated.View>
+    </View>
+  </View>;
+});
 const maxSignalZoom = 32;
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 type SignalWindow = { zoom: number; start: number };
 function SignalPlots({ frame, children }: { frame: Frame; children: ReactNode }) {
   const [manualWindow, setWindow] = useState<SignalWindow | null>(null);
   const current = useRef<SignalWindow | null>(null);
+  const [position] = useState(() => new Animated.Value(0, { useNativeDriver: Platform.OS === "android" }));
   const animation = useRef(0);
   useEffect(() => () => cancelAnimationFrame(animation.current), []);
   const [width, setWidth] = useState(0);
@@ -244,18 +253,29 @@ function SignalPlots({ frame, children }: { frame: Frame; children: ReactNode })
   const initialZoom = bits && width > 0 && duration > 0
     ? clamp(minBitWidth * duration / (width * bits.samplesPerBit), 1, maxSignalZoom) : 1;
   const window = manualWindow ?? { zoom: initialZoom, start: clamp(bits?.start ?? 0, 0, duration - duration / initialZoom) };
-  const initial = useRef(window);
-  initial.current = window;
+  const spanSamples = duration / window.zoom;
+  const pixelsPerSample = duration > 0 ? width / spanSamples : 0;
+  const translateX = useMemo(() => Animated.multiply(position, -pixelsPerSample), [position, pixelsPerSample]);
+  const painted = useRef(window);
+  painted.current = window;
+  useLayoutEffect(() => { if (!current.current) position.setValue(window.start); }, [position, window.start]);
   const applyZoom = (base: SignalWindow, factor: number, from: number, to: number) => {
     const zoom = clamp(base.zoom * factor, 1, maxSignalZoom);
     const span = duration / zoom;
     const start = clamp(base.start + from * duration / base.zoom - to * span, 0, duration - span);
-    const active = current.current ?? initial.current;
+    const active = current.current ?? painted.current;
     if (zoom === active.zoom && start === active.start) return;
     current.current = { zoom, start };
     if (!animation.current) animation.current = requestAnimationFrame(() => {
       animation.current = 0;
-      setWindow(current.current);
+      const next = current.current;
+      if (!next) return;
+      const previous = painted.current;
+      // Move the existing SVG layer; only rebuild its overscan when nearing an edge or changing zoom.
+      if (next.zoom !== previous.zoom || Math.abs(next.start - previous.start) >= duration / next.zoom / 2) {
+        setWindow(next);
+      }
+      position.setValue(next.start);
     });
   };
   const gestures = useMemo(() => {
@@ -264,7 +284,7 @@ function SignalPlots({ frame, children }: { frame: Frame; children: ReactNode })
     return PanResponder.create({
       onStartShouldSetPanResponder: event => event.nativeEvent.touches.length >= 2,
       onMoveShouldSetPanResponder: (event, { dx, dy }) => event.nativeEvent.touches.length >= 2 ||
-        ((current.current ?? initial.current).zoom > 1 && Math.abs(dx) > Math.max(4, Math.abs(dy))),
+        ((current.current ?? painted.current).zoom > 1 && Math.abs(dx) > Math.max(4, Math.abs(dy))),
       onPanResponderGrant: ({ nativeEvent }) => {
         origin = nativeEvent.pageX - nativeEvent.locationX;
         baseline = undefined;
@@ -275,12 +295,14 @@ function SignalPlots({ frame, children }: { frame: Frame; children: ReactNode })
         const count = second ? 2 : 1;
         const center = ((second ? (first.pageX + second.pageX) / 2 : first.pageX) - origin) / width;
         const distance = second ? Math.max(1, Math.hypot(first.pageX - second.pageX, first.pageY - second.pageY)) : 1;
-        if (!baseline || baseline.count !== count) baseline = { window: current.current ?? initial.current, count, center, distance };
+        if (!baseline || baseline.count !== count) baseline = { window: current.current ?? painted.current, count, center, distance };
         applyZoom(baseline.window, distance / baseline.distance, baseline.center, center);
       },
     });
   }, [duration, width]);
-  const viewport = { start: window.start, spanSamples: duration / window.zoom, width, rate: fgb ? 7200 : 600 };
+  const viewport = { start: Math.max(0, window.start - spanSamples * .6),
+    end: Math.min(duration, window.start + spanSamples * 1.6), viewportWidth: width,
+    translateX, pixelsPerSample, rate: fgb ? 7200 : 600 };
   const gestureStyle: ViewStyle & { touchAction?: "pan-y" } = {
     ...StyleSheet.absoluteFill,
     ...(Platform.OS === "web" ? { touchAction: "pan-y" } : {}),

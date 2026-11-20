@@ -432,7 +432,7 @@ Frames reserve davantage de largeur au detail, avec tous les champs regroupes
 par section. Le detail defile independamment du tableau si necessaire.
 Dans Signal, le zoom initial affiche les bits des le debut de la trame.
 Pincer ou utiliser `+` / `-` pour zoomer, puis glisser horizontalement
-pour parcourir la trace. Au zoom suffisant, les bits bruts et l'hexadecimal sont affiches
+pour parcourir la trace et ses graduations temporelles. Au zoom suffisant, les bits bruts et l'hexadecimal sont affiches
 sous la phase FGB ou sous I/Q SGB. En SGB, I (vert) et Q (rouge) sont superposes
 sur la seconde entiere au-dessus de la phase ; les deux graphes restent alignes.
 Les deux tableaux affichent
