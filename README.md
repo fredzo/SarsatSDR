@@ -43,7 +43,8 @@ aussi en ligne de commande, sans interface.
   volume par defaut a 50 %, independant des notifications. Squelch reglable
   de 0 a 60 dB au-dessus du bruit (15 dB par defaut), applique au prochain
   demarrage sans modifier la detection FGB. Le candidat admissible le plus fort
-  reste a l'ecoute jusqu'a sa disparition, sans attendre le BCH. Audio FM
+  ouvre l'audio seulement apres confirmation d'une porteuse non modulee
+  en tete de trame, puis reste a l'ecoute jusqu'a sa disparition, sans attendre le BCH. Audio FM
   coupe pendant les 2 premieres secondes de chaque acquisition RTL-SDR.
 - Notifications MP3 distinctes pour BCH OK, KO et trames filtrees. Sur Android,
   chaque son est precharge et joue une fois a volume inaudible au lancement ;

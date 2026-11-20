@@ -26,7 +26,8 @@ test("FGB WAV playback emits non-silent FM PCM only when requested", async () =>
     ["fgb.wav", ["--fgb-only"], false],
     ["sgb.wav", ["--sgb-only", "--fgb-fm"], false],
   ] as const) {
-    const result = await execute(executable, ["decode", "--input", resolve(root, "samples", sample), "--events", ...options],
+    const profile = sample === "fgb.wav" ? ["--noise-preroll-ms", "2000", "--fgb-over-peak", "15", "--fgb-average", "0.02"] : [];
+    const result = await execute(executable, ["decode", "--input", resolve(root, "samples", sample), "--events", ...profile, ...options],
       { maxBuffer: 8 * 1024 * 1024, timeout: 15000 }).catch(error => {
       if (error.code === 2) return { stdout: String(error.stdout) };
       throw error;

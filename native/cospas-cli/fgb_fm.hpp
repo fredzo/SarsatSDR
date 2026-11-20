@@ -47,6 +47,11 @@ public:
         sum_ = previous_ = {};
         stages_ = {};
         clock_ = count_ = phase_ = 0;
+        carrier_delay_ = {};
+        carrier_samples_ = carrier_windows_ = stable_windows_ = 0;
+        carrier_sum_ = {};
+        carrier_weight_ = 0;
+        carrier_found_ = false;
         dc_ = 0;
     }
 
@@ -101,11 +106,36 @@ private:
         const double angle = std::arg(rotated);
         if (!std::isfinite(angle)) return;
         dc_ += .04 * (angle - dc_);
+        if (!carrier_found_) {
+            detect_carrier(value);
+            return;
+        }
         const auto pcm = static_cast<std::uint16_t>(static_cast<std::int16_t>(
             std::clamp((angle - dc_) * 2, -1.0, 1.0) * 32767));
         pcm_[used_++] = static_cast<std::uint8_t>(pcm);
         pcm_[used_++] = static_cast<std::uint8_t>(pcm >> 8);
         if (used_ == pcm_.size()) flush();
+    }
+
+    void detect_carrier(std::complex<double> sample) {
+        // A 0.5 ms lag exposes phase transitions while leaving room for candidate frequency error.
+        if (carrier_windows_ >= 16) return;
+        auto& delayed = carrier_delay_[carrier_samples_ % carrier_delay_.size()];
+        const auto product = sample * std::conj(delayed);
+        delayed = sample;
+        carrier_sum_ += product;
+        carrier_weight_ += std::abs(product);
+        if (++carrier_samples_ != audio_rate / 100) return;
+        const bool stable = carrier_weight_ > 1e-12 &&
+            std::abs(carrier_sum_) >= .85 * carrier_weight_ &&
+            std::abs(std::arg(carrier_sum_)) <= 2 * std::numbers::pi * .325;
+        ++carrier_windows_;
+        stable_windows_ = stable ? stable_windows_ + 1 : 0;
+        // Allow acquisition latency within the nominal 160 ms preamble.
+        carrier_found_ = stable_windows_ >= 6;
+        carrier_samples_ = 0;
+        carrier_sum_ = {};
+        carrier_weight_ = 0;
     }
 
     unsigned input_rate_;
@@ -115,6 +145,11 @@ private:
     double frequency_{}, dc_{};
     std::complex<double> step_{}, oscillator_{}, sum_{}, previous_{};
     std::array<std::complex<double>, 4> stages_{};
+    std::array<std::complex<double>, audio_rate / 2000> carrier_delay_{};
+    std::complex<double> carrier_sum_{};
+    double carrier_weight_{};
+    unsigned carrier_samples_{}, carrier_windows_{}, stable_windows_{};
+    bool carrier_found_{};
     unsigned clock_{}, count_{}, phase_{};
     std::array<std::uint8_t, audio_rate / 25 * 2> pcm_{};
     std::size_t used_{};

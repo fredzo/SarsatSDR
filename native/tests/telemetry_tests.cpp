@@ -73,29 +73,58 @@ int main() {
         candidates.fgb_above_noise_db[0] = 15;
         candidates.fgb_above_noise_db[1] = 30;
         candidates.fgb_above_noise_db[2] = 14;
-        const auto block = std::span(input).first(921600 / 50);
+        const auto make_burst = [](double frequency, bool modulated) {
+            std::vector<std::complex<float>> samples(921600 / 10);
+            for (std::size_t n = 0; n < samples.size(); ++n) {
+                const double modulation = modulated ? ((n / 1152) % 2 ? 1.1 : -1.1) : 0;
+                samples[n] = std::polar(1.f, float(2 * std::numbers::pi * frequency * double(n) / 921600 + modulation));
+            }
+            return samples;
+        };
+        const auto strongest = make_burst(-68000 + 480, false);
+        const auto next = make_burst(-69000, false);
+        const auto modulated = make_burst(-68000 + 480, true);
         fm.select(candidates, 1.999);
-        fm.push(block);
+        fm.push(strongest);
         fm.flush();
         if (!audio.str().empty()) throw std::runtime_error("FM squelch opened before the RTL startup delay");
         fm.select(candidates, 2);
-        fm.push(block);
+        fm.push(modulated);
+        fm.flush();
+        if (!audio.str().empty()) throw std::runtime_error("FM squelch opened on phase modulation without a preamble");
+        fm.select({}, 2.1);
+        fm.select(candidates, 2);
+        fm.push(std::span(strongest).first(921600 / 20));
+        fm.flush();
+        if (!audio.str().empty()) throw std::runtime_error("FM squelch opened on a short carrier");
         candidates.fgb_channels[0].level_dbfs = -10;
-        fm.select(candidates, 2.02);
-        fm.push(block);
+        fm.select(candidates, 2.05);
+        fm.push(std::span(strongest).subspan(921600 / 20));
+        fm.flush();
+        if (audio.str().find("\"channel\":1") == std::string::npos ||
+            audio.str().find("\"channel\":0") != std::string::npos)
+            throw std::runtime_error("FM squelch did not confirm the original candidate's carrier");
+        audio.str("");
+        fm.push(modulated);
+        fm.flush();
+        if (audio.str().find("\"channel\":1") == std::string::npos)
+            throw std::runtime_error("FM squelch closed when the data modulation started");
+        audio.str("");
         candidates.fgb_channels[1].active = 0;
-        fm.select(candidates, 2.04);
-        fm.push(block);
+        fm.select(candidates, 2.2);
+        fm.push(next);
+        fm.flush();
         candidates.fgb_channels[0].active = 0;
-        fm.select(candidates, 2.06);
-        fm.push(block);
+        fm.select(candidates, 2.3);
+        fm.push(next);
         fm.flush();
         std::istringstream chunks(audio.str());
-        std::string first, second, extra;
-        if (!std::getline(chunks, first) || first.find("\"channel\":1") == std::string::npos ||
-            !std::getline(chunks, second) || second.find("\"channel\":0") == std::string::npos ||
-            std::getline(chunks, extra))
-            throw std::runtime_error("FM must select the strongest candidate, keep it until it ends, and stay silent without candidates");
+        std::string line;
+        if (!std::getline(chunks, line)) throw std::runtime_error("FM squelch did not reopen for the next candidate");
+        do {
+            if (line.find("\"channel\":0") == std::string::npos)
+                throw std::runtime_error("FM squelch opened on a candidate below its noise threshold");
+        } while (std::getline(chunks, line));
         std::cout << "Native UI spectrum: 10 Hz, 1024 bins, RF mapping and dBFS verified\n";
         return 0;
     } catch (const std::exception& error) {
