@@ -4,8 +4,8 @@ import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, Text
 import { Picker } from "@react-native-picker/picker";
 import Slider from "@react-native-community/slider";
 import Svg, { Path, Polyline } from "react-native-svg";
-import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileText, FolderOpen, MapPin,
-  Navigation, Play, BoomBox, RadioTower, RefreshCw, Settings as SettingsIcon, Square, Usb, type LucideIcon, 
+import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileText, FlaskConical, FolderOpen, MapPin,
+  Navigation, Play, BoomBox, Radio, RadioTower, RefreshCw, Settings as SettingsIcon, Square, Usb, type LucideIcon,
   ArrowBigRight,
   ArrowBigLeft} from "lucide-react-native";
 import { startSchema, playbackConfiguration, type Frame, type Info, type Settings, type SpectrumEvent,
@@ -19,6 +19,13 @@ import type { Transport } from "./transport-types";
 
 type Entry = { id: number; frame: Frame; received: string; source: string; centerHz: number };
 const frameMhz = (entry: Entry) => ((entry.centerHz + entry.frame.frequencyOffsetHz) / 1e6).toFixed(3);
+const modeLabel = (mode: Frame["mode"]) => mode === "self_test" ? "Self-test" : "Normal";
+function ModeIcon({ mode }: { mode: Frame["mode"] }) {
+  const Icon = mode === "self_test" ? FlaskConical : Radio;
+  return <View accessibilityRole="image" accessibilityLabel={modeLabel(mode)}>
+    <Icon size={16} color={mode === "self_test" ? "#C084FC" : "#60A5FA"} />
+  </View>;
+}
 const receivedTime = (received: string) => {
   const date = new Date(received);
   return `${date.toLocaleDateString("en-GB")} ${date.toLocaleTimeString("en-GB", { hour12: false })}.${received.slice(20, 23)}`;
@@ -162,10 +169,9 @@ const FrameTable = memo(function FrameTable({ entries, active, select, compact =
   const headers = ["Received", "Gen.", "Type", "Mode", "MHz", "Locator", "BCH"];
   const tableRows = entries.map(entry => {
     const locator = beaconLocator(entry.frame)?.slice(0, 8) ?? "—";
-    const mode = entry.frame.mode === "self_test" ? "TEST" : "NORMAL";
-    const values = ["00:00:00.000", entry.frame.generation === 1 ? "FGB" : "SGB", entry.frame.beaconType, mode, frameMhz(entry), locator];
+    const values = ["00:00:00.000", entry.frame.generation === 1 ? "FGB" : "SGB", entry.frame.beaconType, "", frameMhz(entry), locator];
     if (!compact && entry.frame.headerErrors) values[3] = `HEADER ${entry.frame.headerErrors} bits mismatch`;
-    return { entry, locator, mode, values, bch: entry.frame.bch.map((_, n) => bchStatus(entry.frame, n, true).text) };
+    return { entry, locator, values, bch: entry.frame.bch.map((_, n) => bchStatus(entry.frame, n, true).text) };
   });
   const widths = headers.map((header, n) => {
     const values = n === headers.length - 1 ? tableRows.flatMap(row => row.bch) : tableRows.map(row => row.values[n]);
@@ -185,8 +191,9 @@ const FrameTable = memo(function FrameTable({ entries, active, select, compact =
             onScroll={event => { viewport.current.y = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={16}
             onLayout={event => { viewport.current.height = event.nativeEvent.layout.height; revealSelection(); }}
             onContentSizeChange={revealSelection}>
-            {[...tableRows].reverse().map(({ entry, locator, mode }) => <Pressable key={entry.id} accessibilityRole="button"
+            {[...tableRows].reverse().map(({ entry, locator }) => <Pressable key={entry.id} accessibilityRole="button"
               accessibilityLabel={`Select frame ${entries.indexOf(entry) + 1}`}
+              accessibilityHint={`Mode: ${modeLabel(entry.frame.mode)}`}
               accessibilityState={{ selected: active?.id === entry.id }} onPress={() => select(entry.id)}
               onLayout={event => {
                 layouts.current.set(entry.id, event.nativeEvent.layout);
@@ -200,7 +207,7 @@ const FrameTable = memo(function FrameTable({ entries, active, select, compact =
               <Text style={[s.td, s.mono, { width: widths[1] }]}>{entry.frame.generation === 1 ? "FGB" : "SGB"}</Text>
               <Text style={[s.td, s.mono, { width: widths[2] }]}>{entry.frame.beaconType}</Text>
               <View style={[s.tableBadges, { width: widths[3], paddingHorizontal: 9 }]}>
-                <Text style={[s.td, s.mono, { paddingHorizontal: 0 }]}>{mode}</Text>{!compact && headerBadge(entry.frame)}</View>
+                <View style={s.tableModeIcon}><ModeIcon mode={entry.frame.mode} /></View>{!compact && headerBadge(entry.frame)}</View>
               <Text style={[s.td, s.mono, { width: widths[4] }]}>{frameMhz(entry)}</Text>
               <Text style={[s.td, s.mono, { width: widths[5] }]}>{locator}</Text>
               <View style={[s.tableBadges, { width: widths[6] }]}>{bchBadges(entry.frame, true)}</View>
@@ -226,6 +233,10 @@ function CompactFrameDetails({ entry }: { entry: Entry }) {
   return <View style={s.summaryColumns} onLayout={event => setHeight(event.nativeEvent.layout.height)}>
     <View style={s.summaryColumn}>
       <View style={s.summaryBase} onLayout={event => recordBase(0, event.nativeEvent.layout.height)}>
+        <View style={s.summaryControl}>
+          <Text style={s.summaryLine}><Text style={s.summaryLabel}>Mode: </Text>{modeLabel(entry.frame.mode)}</Text>
+          <ModeIcon mode={entry.frame.mode} />
+        </View>
         <Text style={s.summaryLine}><Text style={s.summaryLabel}>Info: </Text>{formatFieldFrequencies(summary.info[0] ?? "Not available")}</Text>
         {summary.info.slice(1).map((value, n) => <Text key={n} style={s.summaryLine}>{formatFieldFrequencies(value)}</Text>)}
         <Text style={s.summaryLine}><Text style={s.summaryLabel}>Location: </Text>{summary.position?.locator ?? summary.positionStatus ?? "Not available"}</Text>
@@ -267,12 +278,20 @@ const FrameDetail = memo(function FrameDetail({ entry, compact = false }: { entr
     {!entry ? <><Text style={s.h3}>CURRENT FRAME</Text><Text style={s.empty}>No frame selected.</Text></> : <>
       <View style={s.frameHeader}>
         <Text style={[s.h3, s.frameHeaderTitle]}>CURRENT FRAME</Text>
-        <Text style={s.frameHeaderMode}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.frame.mode === "self_test" ? "SELF TEST" : "NORMAL"} · {entry.frame.beaconType} · {frameMhz(entry)} MHz</Text>
+        <View style={s.frameHeaderMode}>
+          <Text style={s.frameHeaderText}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · </Text>
+          <Text style={s.frameHeaderText}>{entry.frame.beaconType} · {frameMhz(entry)} MHz · </Text>
+          <ModeIcon mode={entry.frame.mode} />
+        </View>
         <Text style={[s.frameHeaderTime, s.mono]}>{receivedTime(entry.received)}</Text>
       </View>
       {compact ? <CompactFrameDetails key={entry.id} entry={entry} /> : <>
       <View style={s.metadataGrid}>
         <View style={s.metadataColumn}>
+          <View style={s.summaryControl}>
+            <Text style={s.detail}>Mode: {modeLabel(entry.frame.mode)}</Text>
+            <ModeIcon mode={entry.frame.mode} />
+          </View>
           <Text style={s.detail}>{entry.source}</Text>
           <Text style={[s.detail, s.mono]}>{frameMhz(entry)} MHz · {entry.frame.timeSeconds.toFixed(6)} s</Text>
         </View>
@@ -679,7 +698,8 @@ const s = StyleSheet.create({
   frameHeader: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
   frameHeaderTitle: { flex: 1, marginBottom: 0 },
   frameHeaderTime: { flex: 1.1, textAlign: "right", fontSize: 10, color: "#ffffff" },
-  frameHeaderMode: { flex: 1.4, textAlign: "center", fontSize: 10, color: "#ffffff" },
+  frameHeaderMode: { flex: 1.4, flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "center" },
+  frameHeaderText: { fontSize: 10, color: "#ffffff" },
   summaryColumns: { flex: 1, minHeight: 0, flexDirection: "row", gap: 12 },
   summaryColumn: { flex: 1, minWidth: 0, gap: 3 },
   summaryBase: { gap: 3 },
@@ -751,6 +771,7 @@ const s = StyleSheet.create({
   td: { fontSize: 11, paddingVertical: 10, paddingHorizontal: 9, color: "#ffffff" },
   tableMeasure: { position: "absolute", opacity: 0, fontFamily: mono, fontSize: 11 },
   tableBadges: { alignItems: "flex-start", gap: 2, paddingHorizontal: 9 },
+  tableModeIcon: { paddingVertical: 10 },
   cell: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", paddingHorizontal: 4 },
   link: { color: "#00ffff", textDecorationLine: "underline" },
   mono: { fontFamily: mono },
