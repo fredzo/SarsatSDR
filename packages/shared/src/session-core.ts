@@ -45,15 +45,16 @@ export type EngineProcess = { stop(): void; kill(): void };
 export type EngineLauncher = (args: string[], handlers: EngineHandlers) => EngineProcess;
 
 export class SessionCore {
-  status: "idle" | "starting" | "running" | "stopping" = "idle";
+  status: Extract<ServerEvent, { type: "status" }>["status"] = "idle";
   lastSession: Extract<ServerEvent, { type: "session" }> | null = null;
   private engine: EngineProcess | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private retry: ReturnType<typeof setTimeout> | null = null;
   constructor(private readonly launch: EngineLauncher, private readonly sampleList: () => string[],
     private readonly samplePath: (sample: string) => string, private readonly emit: (event: ServerEvent) => void) {}
 
   start(command: StartCommand) {
-    if (this.engine) throw new Error("Session already active; stop before changing the source or settings");
+    if (this.engine || this.retry) throw new Error("Session already active; stop before changing the source or settings");
     const args = argumentsFor(command, this.sampleList(), this.samplePath);
     this.status = "starting";
     this.lastSession = null;
@@ -92,14 +93,35 @@ export class SessionCore {
         if (this.timer) clearTimeout(this.timer);
         this.timer = null;
         this.engine = null;
+        const message = stderr.trim();
+        if (this.status !== "stopping" && command.source === "rtl" &&
+            (message.includes("RTL-SDR I/Q acquisition queue full; sample continuity lost") ||
+             message.includes("Worker input queue is full; block was not accepted"))) {
+          this.lastSession = null;
+          this.status = "retrying";
+          this.retry = setTimeout(() => {
+            this.retry = null;
+            this.start(command);
+          }, 1000);
+          fail(`${message}\nRetrying RTL-SDR acquisition…`);
+          this.emit({ type: "status", status: this.status });
+          return;
+        }
         if ((code !== 0 && code !== 2) || !terminal)
-          fail(stderr.trim() || `Engine exited without a final result (code ${code})`);
+          fail(message || `Engine exited without a final result (code ${code})`);
         this.status = "idle";
         this.emit({ type: "status", status: this.status });
       },
     });
   }
   stop() {
+    if (this.retry) {
+      clearTimeout(this.retry);
+      this.retry = null;
+      this.status = "idle";
+      this.emit({ type: "status", status: this.status });
+      return;
+    }
     if (!this.engine || this.status === "stopping") return;
     this.status = "stopping";
     this.emit({ type: "status", status: this.status });

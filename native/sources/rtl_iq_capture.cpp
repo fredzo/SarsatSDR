@@ -15,7 +15,7 @@ namespace cospas {
 
 struct RtlIqCapture::Impl {
     RtlUsbSampleIo& source;
-    std::array<RtlIqBlock, 16> queue;
+    std::array<RtlIqBlock, rtl_iq_queue_blocks> queue;
     std::mutex mutex;
     std::condition_variable ready;
     std::size_t begin{}, count{};

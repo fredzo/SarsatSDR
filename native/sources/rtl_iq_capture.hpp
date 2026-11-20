@@ -4,6 +4,8 @@
 
 namespace cospas {
 
+inline constexpr std::size_t rtl_iq_queue_blocks = 128; // About 890 ms at 921.6 kS/s.
+
 struct RtlIqBlock {
     std::array<std::uint8_t, rtl_block_samples * 2> bytes{};
     std::size_t transferred{};

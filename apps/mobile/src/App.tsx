@@ -1,23 +1,48 @@
-import { memo, useEffect, useRef, useState, type ComponentRef, type ReactNode } from "react";
-import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
+import { memo, useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
+import { Linking, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
   type TextStyle, type ViewStyle } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import Slider from "@react-native-community/slider";
+import * as Clipboard from "expo-clipboard";
 import Svg, { Path, Polyline } from "react-native-svg";
-import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileText, FlaskConical, FolderOpen, MapPin,
+import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileSearch, FileText, FlaskConical, FolderOpen, MapPin,
   Navigation, Play, BoomBox, Radio, RadioTower, RefreshCw, Settings as SettingsIcon, Square, Usb, type LucideIcon,
   ArrowBigRight,
-  ArrowBigLeft} from "lucide-react-native";
+  ArrowBigLeft, Copy, ExternalLink, Share2, X } from "lucide-react-native";
 import { startSchema, playbackConfiguration, type Frame, type Info, type Settings, type SpectrumEvent,
   type Diagnostics, type AcquisitionChannel, type ServerEvent } from "@sarsat/shared/protocol";
 import { beaconLocator, beaconPosition, googleMapsUrl, wazeUrl } from "@sarsat/shared/beacon-position";
 import { Spectrum } from "./Spectrum";
 import { BeaconMap } from "./BeaconMap";
 import { createTransport } from "./transport";
-import { fitExtraFields, formatFieldFrequencies, frameSummary } from "./frame-summary";
+import { fitExtraFields, formatFieldFrequencies, frameDetailType, frameSummary } from "./frame-summary";
 import type { Transport } from "./transport-types";
+import { AcquisitionSpinner, type CountdownStart } from "./AcquisitionSpinner";
+import { frameNotification, isFrameFiltered } from "./reception-preferences";
+import { useReceptionPreferences } from "./use-reception-preferences";
+import { useReceptionAudio } from "./use-reception-audio";
+import { OfficialDecoder } from "./OfficialDecoder";
 
 type Entry = { id: number; frame: Frame; received: string; source: string; centerHz: number };
+type Action = { label: string; icon: LucideIcon; run: () => void };
+function ActionPopup({ title, actions, close }: { title: string; actions: Action[]; close: () => void }) {
+  return <Modal transparent animationType="fade" onRequestClose={close}>
+    <View style={s.popupBackdrop}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={close} accessible={false} />
+      <View style={s.popup} accessibilityViewIsModal>
+        <View style={s.popupHeader}><Text style={s.h3}>{title}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close popup" onPress={close} hitSlop={8}>
+            <X size={20} color="#fff" />
+          </Pressable>
+        </View>
+        {actions.map(({ label, icon, run }) => <Button key={label} title={label} icon={icon} onPress={() => { close(); run(); }} />)}
+      </View>
+    </View>
+  </Modal>;
+}
+async function copyText(value: string) {
+  if (!await Clipboard.setStringAsync(value)) throw new Error("Could not copy to the clipboard");
+}
 const frameMhz = (entry: Entry) => ((entry.centerHz + entry.frame.frequencyOffsetHz) / 1e6).toFixed(3);
 const modeLabel = (mode: Frame["mode"]) => mode === "self_test" ? "Self-test" : "Normal";
 function ModeIcon({ mode }: { mode: Frame["mode"] }) {
@@ -30,10 +55,10 @@ const receivedTime = (received: string) => {
   const date = new Date(received);
   return `${date.toLocaleDateString("en-GB")} ${date.toLocaleTimeString("en-GB", { hour12: false })}.${received.slice(20, 23)}`;
 };
-const tabs = ["Detection", "Frames", "Map", "Signal", "Receiver", "Player", "Settings"] as const;
+const tabs = ["Detection", "Frames", "Map", "Detail", "Signal", "Receiver", "Player", "Settings"] as const;
 type Tab = typeof tabs[number];
 const tabIcons: Record<Tab, LucideIcon> = { Detection: RadioTower, Frames: FileText, Map: MapPin,
-  Signal: Activity, Receiver: BoomBox, Player: FileAudio, Settings: SettingsIcon };
+  Detail: FileSearch, Signal: Activity, Receiver: BoomBox, Player: FileAudio, Settings: SettingsIcon };
 const numericSettings: { key: keyof Pick<Settings, "fgbAlpha" | "fgbBeta" | "fgbOverPeakDb" |
   "fgbZeta" | "fgbAverage" | "fgbRuntimeMs" | "fgbMaxErrors" | "fgbBch2MaxErrors" | "fgbHeaderErrors" | "sgbThreshold" | "sgbPhaseGain" |
   "sgbFrequencyGain" | "sgbFilter" | "sgbFeedback" | "sgbMaxErrors" | "searchDepth">;
@@ -145,8 +170,8 @@ function Signal({ entry }: { entry: Entry | undefined }) {
       </>}
     </View>;
 }
-const FrameTable = memo(function FrameTable({ entries, active, select, compact = false }: {
-  entries: Entry[]; active: Entry | undefined; select: (id: number) => void; compact?: boolean;
+const FrameTable = memo(function FrameTable({ entries, active, select, compact = false, filtered = false }: {
+  entries: Entry[]; active: Entry | undefined; select: (id: number) => void; compact?: boolean; filtered?: boolean;
 }) {
   const rows = useRef<ComponentRef<typeof ScrollView>>(null);
   const layouts = useRef(new Map<number, { y: number; height: number }>());
@@ -181,8 +206,8 @@ const FrameTable = memo(function FrameTable({ entries, active, select, compact =
   return <View style={s.fill} accessibilityLabel="Received frames">
     <Text aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
       style={s.tableMeasure} onLayout={event => setGlyphWidth(event.nativeEvent.layout.width / 10)}>0000000000</Text>
-    {!entries.length ? <View style={s.emptyPane}><Text style={s.emptyStrong}>No frames received</Text>
-      <Text style={s.empty}>Start the receiver or play an I/Q capture.</Text></View> :
+    {!entries.length ? <View style={s.emptyPane}><Text style={s.emptyStrong}>{filtered ? "All frames are filtered" : "No frames received"}</Text>
+      <Text style={s.empty}>{filtered ? "Change display filters in Settings to show stored frames." : "Start the receiver or play an I/Q capture."}</Text></View> :
       <ScrollView horizontal style={s.fill} contentContainerStyle={{ minWidth: "100%" }}>
         <View style={{ minWidth: "100%", flex: 1 }}>
           <View style={[s.tr, s.th]}>{headers.map((name, n) =>
@@ -218,6 +243,8 @@ const FrameTable = memo(function FrameTable({ entries, active, select, compact =
   </View>;
 });
 function CompactFrameDetails({ entry }: { entry: Entry }) {
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyError, setCopyError] = useState("");
   const summary = frameSummary(entry.frame);
   const [height, setHeight] = useState(0);
   const [baseHeights, setBaseHeights] = useState<[number, number]>([0, 0]);
@@ -239,12 +266,23 @@ function CompactFrameDetails({ entry }: { entry: Entry }) {
         </View>
         <Text style={s.summaryLine}><Text style={s.summaryLabel}>Info: </Text>{formatFieldFrequencies(summary.info[0] ?? "Not available")}</Text>
         {summary.info.slice(1).map((value, n) => <Text key={n} style={s.summaryLine}>{formatFieldFrequencies(value)}</Text>)}
-        <Text style={s.summaryLine}><Text style={s.summaryLabel}>Location: </Text>{summary.position?.locator ?? summary.positionStatus ?? "Not available"}</Text>
-        <Text style={s.summaryLine}>{summary.country ?? "Country not available"}</Text>
-        {summary.position && <>
-          <Text style={s.summaryLine}>{summary.position.dms}</Text>
-          <Text style={s.summaryLine}>{summary.position.decimal}</Text>
-        </>}
+        <View style={s.locationRow}>
+          <View style={[s.fill, s.summaryBase]}>
+            <Text style={s.summaryLine}><Text style={s.summaryLabel}>Location: </Text>{summary.position?.locator ?? summary.positionStatus ?? "Not available"}</Text>
+            <Text style={s.summaryLine}>{summary.country ?? "Country not available"}</Text>
+            {summary.position && <>
+              <Text style={s.summaryLine}>{summary.position.dms}</Text>
+              <Text style={s.summaryLine}>{summary.position.decimal}</Text>
+            </>}
+          </View>
+          {summary.position && <Pressable accessibilityRole="button" accessibilityLabel="Copy coordinates"
+            style={({ pressed }) => [s.locationCopy, pressed && { opacity: .7 }]}
+            onPress={() => { setCopyError(""); setCopyOpen(true); }}><Copy size={23} color="#3fe6e6" /></Pressable>}
+        </View>
+        {copyError !== "" && <Text accessibilityRole="alert" style={s.errorText}>{copyError}</Text>}
+        {copyOpen && summary.position && <ActionPopup title="Copy coordinates" close={() => setCopyOpen(false)}
+          actions={[summary.position.decimal, summary.position.dms, ...(summary.position.locator ? [summary.position.locator] : [])]
+            .map(value => ({ label: value, icon: Copy, run: () => { void copyText(value).catch(reason => setCopyError(String(reason))); } }))} />}
         {!!summary.emergency.length && <Text style={s.summaryLine}><Text style={[s.summaryLabel, s.emergencyLabel]}>Emergency: </Text>{formatFieldFrequencies(summary.emergency.join(" · "))}</Text>}
       </View>
       {columns[0].map(index => <View key={index}>{extra(index)}</View>)}
@@ -311,7 +349,8 @@ const FrameDetail = memo(function FrameDetail({ entry, compact = false }: { entr
           {fields.filter(field => field.section === section).map((field, n) =>
             <View key={n} style={s.fullFieldRow}>
               <Text selectable style={[s.fieldName, section === "Emergency" && s.emergencyLabel]}>{field.name}</Text>
-              <Text selectable style={s.fieldValue}>{formatFieldFrequencies(field.value)}</Text>
+              <Text selectable style={s.fieldValue}>{section === "Identification" && field.name === "Type"
+                ? frameDetailType(field.value) : formatFieldFrequencies(field.value)}</Text>
             </View>)}
           {(section === "Location" || section === "Encoded GNSS Location") && beaconLocator(entry.frame) &&
             <View style={s.fullFieldRow}><Text style={s.fieldName}>Locator</Text>
@@ -326,7 +365,24 @@ const FrameDetail = memo(function FrameDetail({ entry, compact = false }: { entr
       accessibilityLabel="Current frame details" nestedScrollEnabled>{content}</ScrollView>;
 });
 const MapPanel = memo(function MapPanel({ entry, compact = false }: { entry: Entry | undefined; compact?: boolean }) {
+  const [link, setLink] = useState<{ name: string; url: string } | null>(null);
+  const [linkError, setLinkError] = useState("");
   const position = entry && beaconPosition(entry.frame);
+  async function shareLink(name: string, url: string) {
+    if (Platform.OS !== "web") { await Share.share({ title: name, message: url }); return; }
+    if (!navigator.share) throw new Error("Sharing is unavailable in this browser. Use Copy URL.");
+    await navigator.share({ title: name, url });
+  }
+  const report = (reason: unknown) => {
+    if (!(reason instanceof Error && reason.name === "AbortError")) setLinkError(String(reason));
+  };
+  const mapLink = (name: string, url: string, Icon: LucideIcon, label = name, color?: string) =>
+    <Pressable accessibilityRole="link" accessibilityLabel={name} accessibilityHint="Long press to copy or share the URL"
+      style={[s.mapLink, color ? { backgroundColor: color } : undefined]}
+      onPress={() => { setLinkError(""); void Linking.openURL(url).catch(report); }}
+      onLongPress={() => { setLinkError(""); setLink({ name, url }); }}>
+      <Icon size={18} color="#fff" /><Text style={s.mapLinkText}>{label}</Text>
+    </Pressable>;
   return <View style={s.mapPane} accessibilityLabel="Beacon map">
     <View style={s.mapHeader}>
       <Text style={[s.h3, { marginBottom: 0 }]}>MAP</Text>
@@ -335,21 +391,37 @@ const MapPanel = memo(function MapPanel({ entry, compact = false }: { entry: Ent
         {!compact && ` · ${entry.frame.generation === 1 ? "FGB" : "SGB"} · ${entry.frame.correctedHex} · ${entry.frame.timeSeconds.toFixed(3)} s`}
       </Text>}
     </View>
+    {linkError !== "" && <Text accessibilityRole="alert" style={s.errorText}>{linkError}</Text>}
+    {link && <ActionPopup title={link.name} close={() => setLink(null)} actions={[
+      { label: "Copy URL", icon: Copy, run: () => { void copyText(link.url).catch(report); } },
+      { label: "Share URL", icon: Share2, run: () => { void shareLink(link.name, link.url).catch(report); } },
+    ]} />}
     {!entry || !position ? <View style={s.emptyPane}><Text style={s.empty}>No decoded beacon position.</Text></View> : <>
       <View style={s.mapContent}>
         <View style={s.fill}><BeaconMap lat={position.lat} lon={position.lon} /></View>
         <View style={s.mapActions}>
-          <Pressable accessibilityRole="link" accessibilityLabel="Google Maps" style={s.mapLink}
-            onPress={() => { void Linking.openURL(googleMapsUrl(position.lat, position.lon)); }}>
-            <MapPin size={18} color="#fff" /><Text style={s.mapLinkText}>{"Google\nMaps"}</Text></Pressable>
-          <Pressable accessibilityRole="link" accessibilityLabel="Waze" style={[s.mapLink, { backgroundColor: "#087899" }]}
-            onPress={() => { void Linking.openURL(wazeUrl(position.lat, position.lon)); }}>
-            <Navigation size={18} color="#fff" /><Text style={s.mapLinkText}>Waze</Text></Pressable>
+          {mapLink("Google Maps", googleMapsUrl(position.lat, position.lon), MapPin, "Google\nMaps")}
+          {mapLink("Waze", wazeUrl(position.lat, position.lon), Navigation, "Waze", "#087899")}
         </View>
       </View>
     </>}
   </View>;
 });
+function OfficialDetail({ entry }: { entry: Entry | undefined }) {
+  const [error, setError] = useState("");
+  if (!entry) return <Text style={s.empty}>No frame selected.</Text>;
+  const url = `https://decoder2.herokuapp.com/decoded/${encodeURIComponent(entry.frame.correctedHex)}`;
+  return <>
+    <View style={s.row}>
+      <Text style={[s.h3, s.fill]}>OFFICIAL COSPAS-SARSAT DECODER</Text>
+      <Button title="Open in browser" icon={ExternalLink} onPress={() => {
+        void Linking.openURL(url).catch(reason => setError(String(reason)));
+      }} />
+    </View>
+    {error !== "" && <Text accessibilityRole="alert" style={s.errorText}>{error}</Text>}
+    <OfficialDecoder url={url} onError={setError} />
+  </>;
+}
 function Readout({ label, children }: { label: string; children: ReactNode }) {
   return <View style={s.readout}><Text style={s.readoutLabel}>{label}</Text><Text style={s.readoutValue} numberOfLines={1}>{children}</Text></View>;
 }
@@ -367,6 +439,11 @@ export default function App() {
   const [status, setStatus] = useState<Info["status"]>("idle");
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
+  const { preferences: reception, current: receptionRef, ready: preferencesReady, change: changeReception } = useReceptionPreferences(setError);
+  const playSound = useReceptionAudio(setError);
+  const playSoundRef = useRef(playSound);
+  playSoundRef.current = playSound;
+  const [countdownStart, setCountdownStart] = useState<CountdownStart | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [line, setLine] = useState<SpectrumEvent | null>(null);
@@ -401,20 +478,29 @@ export default function App() {
     const parsed = await target.info();
     setInfo(parsed);
     setSettings(previous => previous ?? parsed.settings);
-    if (parsed.devices.length === 1) setDevice(`${parsed.devices[0].bus}:${parsed.devices[0].address}`);
   }
+  const devices = info?.devices;
+  useEffect(() => {
+    if (!devices) return;
+    const addresses = devices.map(({ bus, address }) => `${bus}:${address}`);
+    setDevice(previous => addresses.length === 1 ? addresses[0] : addresses.includes(previous) ? previous : "");
+  }, [devices]);
+
   useEffect(() => {
     let active = true;
+    let unwatchDevices: (() => void) | undefined;
     const handle = (message: ServerEvent) => {
       if (!active) return;
       try {
         if (message.type === "status") {
           if (message.status === "running" || message.status === "idle") receiverActionPending.current = false;
           setStatus(message.status);
+          if (message.status !== "running") setCountdownStart(null);
           if (message.status === "idle") { setChannels([]); setSgbDetections(0); setFgbDetections(0); }
         }
         else if (message.type === "error") { receiverActionPending.current = false; setError(message.message); }
         else if (message.type === "session") {
+          setCountdownStart(null);
           frameSource.label = message.label ?? (message.source === "rtl" ? "RTL-SDR" : "WAV I/Q");
           frameSource.centerHz = message.centerHz;
           previousSgbCandidates.current = 0;
@@ -442,18 +528,28 @@ export default function App() {
           const entry = { id: ++frameSource.sequence, frame: message.frame, received: new Date().toISOString(),
             source: frameSource.label, centerHz: frameSource.centerHz };
           setEntries(values => [...values.slice(-199), entry]);
-          setSelected(entry.id);
+          const preferences = receptionRef.current;
+          if (!isFrameFiltered(entry.frame, preferences)) {
+            setSelected(entry.id);
+            if (entry.frame.generation === 1 && preferences.countdown)
+              setCountdownStart({ id: entry.id, at: Date.now() });
+          }
+          const sound = frameNotification(entry.frame, preferences);
+          if (sound) playSoundRef.current(sound, preferences.volume);
         }
       } catch (reason) { setError(`Invalid UI event: ${reason instanceof Error ? reason.message : String(reason)}`); }
     };
     const created = createTransport({ event: handle, connection: (value, reason) => {
       if (!active) return;
       setConnected(value);
-      if (!value) { receiverActionPending.current = false; setChannels([]); setSgbDetections(0); setFgbDetections(0); if (reason) setError(reason); }
+      if (!value) { receiverActionPending.current = false; setCountdownStart(null); setChannels([]); setSgbDetections(0); setFgbDetections(0); if (reason) setError(reason); }
     } });
     setTransport(created);
-    void refresh(created).catch(reason => { if (active) setError(String(reason)); });
-    return () => { active = false; created.close(); };
+    void refresh(created).then(() => {
+      if (!active) return;
+      unwatchDevices = created.watchDevices?.(next => setInfo(previous => previous && { ...previous, devices: next }));
+    }).catch(reason => { if (active) setError(String(reason)); });
+    return () => { active = false; unwatchDevices?.(); created.close(); };
   }, []);
 
   const busy = status !== "idle";
@@ -502,21 +598,22 @@ export default function App() {
       const link = document.createElement("a"); link.href = url; link.download = "sarsat-decodes.json"; link.click(); URL.revokeObjectURL(url);
     } else void Share.share({ title: "sarsat-decodes.json", message: json });
   }
-  const activeFrame = entries.find(entry => entry.id === selected) ?? entries.at(-1);
+  const visibleEntries = useMemo(() => entries.filter(entry => !isFrameFiltered(entry.frame, reception)),
+    [entries, reception.filterInvalid, reception.filterOrbitographic]);
+  const activeFrame = visibleEntries.find(entry => entry.id === selected) ?? visibleEntries.at(-1);
   const elapsed = session && metrics ? Math.max(0, metrics.samples / session.sampleRateHz - (session.noisePrerollMs ?? 0) / 1000) : 0;
   const d = metrics?.diagnostics;
   const decoderLocked = busy || !displayedSettings || (tab === "Player" && useSampleProfile);
   const duration = session?.durationSeconds ?? 1;
   const receiving = connected && status === "running";
-  const activeIndex = activeFrame ? entries.findIndex(entry => entry.id === activeFrame.id) : -1;
-  const [dashboardHeight, setDashboardHeight] = useState(0);
+  const activeIndex = activeFrame ? visibleEntries.findIndex(entry => entry.id === activeFrame.id) : -1;
+  const frameCount = visibleEntries.length === entries.length ? String(entries.length) : `${visibleEntries.length}/${entries.length}`;
   const spectrum = (compact = false) => <Spectrum line={line} channels={channels} centerHz={session?.centerHz ?? center * 1e6}
     epoch={epoch} floor={base} range={range} average={average} speed={waterfallSpeed}
     sgbDetections={sgbDetections} fgbDetections={fgbDetections} compact={compact}
-    height={compact ? Math.max(100, dashboardHeight * .52 - 12) : undefined}
     automatic={waterfallAutomatic} calibrationDb={session?.source === "rtl" ? calibrationDb : 0} relative={session?.source === "sample"} />;
   const frameActions = <View style={[s.row, { padding: 8 }]}>
-    <Text style={[s.h3, { flex: 1, marginBottom: 0 }]}>FRAMES ({entries.length})</Text>
+    <Text style={[s.h3, { flex: 1, marginBottom: 0 }]}>FRAMES ({frameCount})</Text>
     <Button iconOnly icon={Eraser} title="Clear frames" onPress={() => { setEntries([]); setSelected(null); }} />
     <Button iconOnly icon={Download} title="Export JSON" disabled={!entries.length} onPress={exportJson} />
   </View>;
@@ -528,20 +625,21 @@ export default function App() {
         <View style={s.row}><Led tone={connected ? "green" : undefined} /><Text style={s.connection}>
           {connected ? Platform.OS === "web" ? "CONNECTED" : "ONLINE" : "OFFLINE"} · RTL-SDR</Text></View>
         <View style={s.row}><Led tone={receiving ? "green" : undefined} />
-          <Text numberOfLines={1} style={[s.connection, s.receivingLabel]}>{receiving ? "RECEIVING" : "STOPPED"}</Text></View>
+          <Text numberOfLines={1} style={[s.connection, s.receivingLabel]}>{receiving ? "RECEIVING" : status === "retrying" ? "RETRYING" : "STOPPED"}</Text></View>
+        <AcquisitionSpinner running={receiving} start={countdownStart} preferences={reception} play={playSound} />
         <Button iconOnly kind={busy ? "stop" : "primary"} icon={busy ? Square : Play}
           backgroundColor={busy ? "#4a1616" : undefined} title={busy ? "Stop reception" : "Start reception"}
-          disabled={!connected || status === "starting" || status === "stopping" || (!busy && (!settings || !info?.devices.length))}
+          disabled={!connected || !preferencesReady || status === "starting" || status === "stopping" || (!busy && (!settings || !info?.devices.length))}
           onPress={toggleReceiver} />
       </View></View>
     {!!error && <View accessibilityRole="alert" style={s.error}><Text style={s.errorText}><Text style={{ fontWeight: "bold" }}>ERROR </Text>{error}</Text>
       <Pressable accessibilityLabel="Dismiss error" onPress={() => setError("")}><Text style={[s.errorText, { fontSize: 22 }]}>×</Text></Pressable></View>}
-    {tab === "Detection" && <View style={s.dashboard} onLayout={event => setDashboardHeight(event.nativeEvent.layout.height)}>
+    {tab === "Detection" && <View style={s.dashboard}>
       <View style={s.dashboardColumn}>
         <View style={s.dashboardTop} accessibilityLabel="Detection spectrum">{spectrum(true)}</View>
         <View style={s.dashboardBottom}>
-          <Text style={[s.h3, { marginBottom: 0, padding: 8 }]}>FRAMES ({entries.length})</Text>
-          <FrameTable entries={entries} active={activeFrame} select={setSelected} compact />
+          <Text style={[s.h3, { marginBottom: 0, padding: 8 }]}>FRAMES ({frameCount})</Text>
+          <FrameTable entries={visibleEntries} active={activeFrame} select={setSelected} filtered={entries.length > 0} compact />
         </View>
       </View>
       <View style={s.dashboardColumn}>
@@ -550,10 +648,11 @@ export default function App() {
       </View>
     </View>}
     {tab === "Frames" && <View style={s.split}>
-      <View style={[s.splitColumn, { flex: 2 }]}>{frameActions}<FrameTable entries={entries} active={activeFrame} select={setSelected} /></View>
+      <View style={[s.splitColumn, { flex: 2 }]}>{frameActions}<FrameTable entries={visibleEntries} active={activeFrame} select={setSelected} filtered={entries.length > 0} /></View>
       <View style={[s.splitColumn, { flex: 3 }]}><FrameDetail entry={activeFrame} /></View>
     </View>}
     {tab === "Map" && <View style={s.fixedPage}><MapPanel entry={activeFrame} /></View>}
+    {tab === "Detail" && <View style={s.fixedPage}><OfficialDetail key={activeFrame?.id} entry={activeFrame} /></View>}
     {(tab === "Receiver" || tab === "Player" || tab === "Signal" || tab === "Settings") &&
     <ScrollView style={s.fill} contentContainerStyle={{ paddingBottom: 12 }}>
         {tab === "Player" && <View style={s.panel}><Text style={s.h2}>Player <Text style={s.h2Small}>Native I/Q capture playback</Text></Text>
@@ -566,7 +665,7 @@ export default function App() {
               disabled={busy || useSampleProfile} onChange={setRemoveDc} />
             <NumberField label="Noise preroll · ms" disabled={busy || useSampleProfile}
               value={useSampleProfile ? playback?.noisePrerollMs ?? 0 : preroll} onChange={setPreroll} />
-            <Button kind="primary" icon={Play} title="PLAY" disabled={busy || !connected || !settings} onPress={() => start("sample")} />
+            <Button kind="primary" icon={Play} title="PLAY" disabled={busy || !connected || !settings || !preferencesReady} onPress={() => start("sample")} />
             <Button icon={Square} title="STOP" disabled={!busy} onPress={stop} />
           </View>
           <View accessibilityLabel="Capture progress" style={s.progress}>
@@ -619,7 +718,34 @@ export default function App() {
 
       {tab === "Signal" && <Signal entry={activeFrame} />}
 
-      {tab === "Settings" && <View style={s.panel}><Text style={s.h2}>Settings <Text style={s.h2Small}>Applied on next start</Text></Text>
+      {tab === "Settings" && <View style={s.panel}><Text style={s.h2}>Settings</Text>
+        <View style={s.fieldset}><Text style={s.legend}>RECEPTION · APPLIED IMMEDIATELY · SAVED ON THIS DEVICE</Text>
+          <View style={s.settingsGrid}>
+            <Check label="Frame audio notifications" value={reception.notifications} disabled={!preferencesReady}
+              onChange={value => changeReception("notifications", value)} />
+            <Range label="Notification volume · %" value={Math.round(reception.volume * 100)} min={0} max={100} step={1}
+              disabled={!preferencesReady} onChange={value => changeReception("volume", value / 100)} />
+            <Check label="Filter invalid frames" value={reception.filterInvalid} disabled={!preferencesReady}
+              onChange={value => changeReception("filterInvalid", value)} />
+            <Check label="Filter system frames" value={reception.filterOrbitographic} disabled={!preferencesReady}
+              onChange={value => changeReception("filterOrbitographic", value)} />
+            <Check label="FGB countdown" value={reception.countdown} disabled={!preferencesReady}
+              onChange={value => changeReception("countdown", value)} />
+            <NumberField label="Countdown duration · seconds" value={reception.countdownSeconds} disabled={!preferencesReady}
+              onChange={value => changeReception("countdownSeconds", value)} />
+            <Check label="Countdown beep" value={reception.countdownBeep} disabled={!preferencesReady}
+              onChange={value => changeReception("countdownBeep", value)} />
+            <Check label="Auto reload countdown" value={reception.autoReloadCountdown} disabled={!preferencesReady}
+              onChange={value => changeReception("autoReloadCountdown", value)} />
+          </View>
+          <Text style={s.p}>Filters hide frames only; all received frames remain stored (latest 200) and included in JSON exports.
+            System frame filtering covers FGB ORB and SGB SYSTM.
+            The counter counts up at acquisition start and after countdown expiry without auto reload.
+            Each unfiltered FGB starts a countdown. Long press the spinner to count up from zero until the next unfiltered FGB.
+            Beeps at 5, 4, 3, 2 and 1 seconds use notification volume, independently of frame audio notifications.
+            Duration: 1–3600 seconds; changes apply to the next countdown.</Text>
+        </View>
+        <Text style={s.p}>Receiver and DSP settings below apply on next start.</Text>
         <View style={s.fieldset}><Text style={s.legend}>RTL-SDR · 921600 complex samples/s · Bias-T OFF</Text>
           <View style={s.settingsGrid}>
             <Select label="USB device" value={device} onChange={setDevice} disabled={busy || !settings}
@@ -643,7 +769,7 @@ export default function App() {
         <Text style={s.p}>DSP defaults are read from the C API. Initial gain preset: 8.
           Search Depth: ±{((settings?.searchDepth ?? 9) * 1.2 / 9).toFixed(3)} kHz.
           Settings apply to RTL-SDR reception and manual WAV playback; validated capture profiles are independent.
-          Stop the session before changing DSP settings. Settings are not saved yet.</Text>
+          Stop the session before changing DSP settings. Receiver and DSP settings are not saved yet.</Text>
         <Text style={s.p}>RTL calibration adds an offset to FFT and Full BW without changing decoding.
           With a known RF source, enter known level minus displayed level. Default: 0 dB; adjust for each device.
           Without a calibrated source, dBm values are estimates. WAV levels remain relative.
@@ -655,19 +781,19 @@ export default function App() {
         const Icon = tabIcons[name];
         const arrow = (direction: -1 | 1) => <Pressable key={direction} accessibilityRole="button"
           accessibilityLabel={direction === -1 ? "Previous frame" : "Next frame"}
-          disabled={activeIndex < 0 || activeIndex + direction < 0 || activeIndex + direction >= entries.length}
-          onPress={() => setSelected(entries[activeIndex + direction].id)}
-          style={[s.navArrow, (activeIndex < 0 || activeIndex + direction < 0 || activeIndex + direction >= entries.length) && { opacity: .3 }]}>
+          disabled={activeIndex < 0 || activeIndex + direction < 0 || activeIndex + direction >= visibleEntries.length}
+          onPress={() => setSelected(visibleEntries[activeIndex + direction].id)}
+          style={[s.navArrow, (activeIndex < 0 || activeIndex + direction < 0 || activeIndex + direction >= visibleEntries.length) && { opacity: .3 }]}>
           {direction === -1 ? <ArrowBigLeft size={22} color="#00ffff" /> : <ArrowBigRight size={22} color="#00ffff" />}
         </Pressable>;
         return <View key={name} style={[s.navItem, name === "Frames" && { flex: 1.8 }]}>
           {name === "Frames" && arrow(-1)}
           <Pressable accessibilityRole="tab" accessibilityState={{ selected: tab === name }}
-            accessibilityLabel={name === "Frames" ? `Frames (${activeIndex + 1}/${entries.length})` : name}
+            accessibilityLabel={name === "Frames" ? `Frames (${activeIndex + 1}/${visibleEntries.length})` : name}
             onPress={() => setTab(name)} style={[s.navTab, tab === name && s.navSelected]}>
             <Icon size={22} color={tab === name ? "#00ffff" : "#98a3a3"} />
             <Text style={[s.navLabel, tab === name && { color: "#00ffff" }]} numberOfLines={1}>
-              {name === "Frames" ? `Frames (${activeIndex + 1}/${entries.length})` : name}</Text>
+              {name === "Frames" ? `Frames (${activeIndex + 1}/${visibleEntries.length})` : name}</Text>
           </Pressable>
           {name === "Frames" && arrow(1)}
         </View>;
@@ -678,6 +804,10 @@ export default function App() {
 
 const mono = Platform.select({ web: "Consolas,monospace", default: "monospace" });
 const s = StyleSheet.create({
+  popupBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "center", alignItems: "center" },
+  popup: { minWidth: 250, maxWidth: "90%", gap: 8, padding: 16, borderRadius: 10, borderWidth: 1,
+    borderColor: "#335555", backgroundColor: "#002222" },
+  popupHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 16 },
   main: { flex: 1, backgroundColor: "#001000" },
   titlebar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#002222", minHeight: 58, paddingVertical: 5, paddingHorizontal: 20 },
   brand: { flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "center", flexShrink: 1 },
@@ -703,6 +833,9 @@ const s = StyleSheet.create({
   summaryColumns: { flex: 1, minHeight: 0, flexDirection: "row", gap: 12 },
   summaryColumn: { flex: 1, minWidth: 0, gap: 3 },
   summaryBase: { gap: 3 },
+  locationRow: { flexDirection: "row", alignItems: "stretch", gap: 6 },
+  locationCopy: { width: 44, minHeight: 44, justifyContent: "center", alignItems: "center", borderWidth: 1,
+    borderColor: "#335555", borderRadius: 6, backgroundColor: "#002222" },
   summaryControl: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 4 },
   summaryMeasure: { position: "absolute", left: 0, right: 0, top: 0, opacity: 0 },
   summaryLine: { fontSize: 11, lineHeight: 15, color: "#ffffff" },

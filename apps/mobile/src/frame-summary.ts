@@ -6,6 +6,10 @@ export function formatFieldFrequencies(value: string) {
     (_, frequency: string, unit: string) => `${Number(frequency).toFixed(3)} ${unit}`);
 }
 
+export function frameDetailType(value: string) {
+  return value === "SYSTM" ? "System Beacon" : value;
+}
+
 function dms(value: number, positive: string, negative: string) {
   const tenths = Math.round(Math.abs(value) * 36000);
   const degrees = Math.floor(tenths / 36000);
@@ -20,7 +24,7 @@ export function frameSummary(frame: Frame) {
   const position = beaconPosition(frame);
   const info = frame.generation === 1
     ? [field("Protocol"), field("Protocol Description"), field("Additional Data")]
-    : [field("Type", "Identification"), field("Vessel ID", "Identification")];
+    : [frameDetailType(field("Type", "Identification") ?? frame.beaconType), field("Vessel ID", "Identification")];
   const emergency = frame.generation === 1
     ? [field("Emergency", "Emergency"), field("Emergency Mode", "Emergency")]
     : [field("Triggering Event", "Rotating Field 1")];

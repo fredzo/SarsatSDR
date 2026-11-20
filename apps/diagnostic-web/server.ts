@@ -40,7 +40,8 @@ const server = createServer(async (request, response) => {
       if (path !== base && !path.startsWith(base + sep)) { response.writeHead(403).end("Forbidden"); return; }
       const file = path === base ? resolve(base, "index.html") : path;
       response.setHeader("Content-Type", ({ ".html": "text/html; charset=utf-8", ".js": "text/javascript",
-        ".css": "text/css", ".svg": "image/svg+xml", ".json": "application/json", ".png": "image/png", ".ico": "image/x-icon" } as Record<string, string>)[extname(file)] ?? "application/octet-stream");
+        ".css": "text/css", ".svg": "image/svg+xml", ".json": "application/json", ".png": "image/png", ".ico": "image/x-icon",
+        ".mp3": "audio/mpeg" } as Record<string, string>)[extname(file)] ?? "application/octet-stream");
       response.setHeader("X-Content-Type-Options", "nosniff");
       response.end(await readFile(file));
     }

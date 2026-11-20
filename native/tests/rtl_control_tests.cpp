@@ -911,10 +911,9 @@ class SampleRecorder final : public cospas::RtlUsbSampleIo {
 public:
     int calls{}, stops{};
     bool disconnect{true}, invalid_count{};
-    std::latch* seventeenth_read{};
+    std::latch* stopped{};
     int read_iq(std::span<std::uint8_t> data, std::size_t& transferred, unsigned timeout_ms) noexcept override {
         ++calls;
-        if (seventeenth_read && calls == 17) seventeenth_read->count_down();
         transferred = 0;
         if (timeout_ms != 250) return LIBUSB_ERROR_INVALID_PARAM;
         if (disconnect && calls >= 3) return LIBUSB_ERROR_NO_DEVICE;
@@ -923,7 +922,7 @@ public:
         std::fill(data.begin(), data.end(), std::uint8_t(calls));
         return disconnect && calls == 2 ? LIBUSB_ERROR_TIMEOUT : 0;
     }
-    int stop_iq() noexcept override { ++stops; return 0; }
+    int stop_iq() noexcept override { ++stops; if (stopped) stopped->count_down(); return 0; }
 };
 
 void iq_acquisition() {
@@ -945,15 +944,16 @@ void iq_acquisition() {
     SampleRecorder overflowing;
     overflowing.disconnect = false;
     std::latch full(1);
-    overflowing.seventeenth_read = &full;
+    overflowing.stopped = &full;
     cospas::RtlIqCapture bounded(overflowing);
     full.wait();
     bounded.stop();
-    for (int n = 1; n <= 16; ++n)
+    for (std::size_t n = 1; n <= cospas::rtl_iq_queue_blocks; ++n)
         require(bounded.read(block) && block.transferred == 12800 && block.bytes.front() == n,
-                "The sixteen preallocated acquisition slots must preserve FIFO order");
+                "The preallocated acquisition slots must preserve FIFO order");
     const auto overflow = require_error<std::runtime_error>([&] { bounded.read(block); });
-    require(overflow.find("continuity lost") != std::string::npos && overflowing.calls == 17 && overflowing.stops == 1,
+    require(overflow.find("continuity lost") != std::string::npos &&
+            overflowing.calls == int(cospas::rtl_iq_queue_blocks + 1) && overflowing.stops == 1,
             "Full acquisition queue must terminate explicitly instead of blocking or silently dropping samples");
     SampleRecorder malformed;
     malformed.invalid_count = true;

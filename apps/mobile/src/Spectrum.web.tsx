@@ -17,11 +17,11 @@ function shader(gl: WebGL2RenderingContext, type: number, source: string) {
   return result;
 }
 
-export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative, sgbDetections, fgbDetections, compact = false, height }: {
+export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative, sgbDetections, fgbDetections, compact = false }: {
   line: SpectrumEvent | null; epoch: number; floor: number; range: number; average: number;
   channels: AcquisitionChannel[]; centerHz: number; speed: number; automatic: boolean; calibrationDb: number; relative: boolean;
   sgbDetections: number; fgbDetections: number;
-  compact?: boolean; height?: number;
+  compact?: boolean;
 }) {
   const fft = useRef<HTMLCanvasElement>(null);
   const waterfall = useRef<HTMLCanvasElement>(null);
@@ -209,7 +209,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
   }, [line, channels, centerHz, average, calibrationDb, epoch, compact]);
 
   const mono = "Consolas,monospace";
-  return <section style={{ margin: compact ? 0 : "0 18px", height: compact ? height : undefined, display: "flex", flexDirection: "column", background: "#000", border: "1px solid #335555", borderRadius: 3, overflow: "hidden" }}
+  return <section style={{ margin: compact ? 0 : "0 18px", flex: compact ? 1 : undefined, minHeight: 0, display: "flex", flexDirection: "column", background: "#000", border: "1px solid #335555", borderRadius: 3, overflow: "hidden" }}
     aria-label="Spectrum and waterfall 406 to 406.100 MHz">
     <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "1fr auto 1fr", gap: compact ? 4 : 0, alignItems: "center", justifyItems: compact ? "center" : undefined, padding: compact ? "5px 4px" : "9px 12px", font: `10px ${mono}`, background: "#001000", color: "#00ffff" }}>
       {!compact && <span>FFT <b style={{ marginLeft: 10 }}>406.000 — 406.100 MHz</b></span>}
@@ -218,8 +218,10 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
         <DetectionActivity generation="SGB" detections={sgbDetections} />
       </div>
       {!compact && <span style={{ textAlign: "right" }}>{relative ? "Relative level · WAV" : `Estimated dBm · offset ${calibrationDb.toFixed(1)} dB`}</span>}</div>
-    <canvas ref={fft} style={{ display: "block", width: "100%", height: compact ? Math.max(70, ((height ?? 400) - 60) * .52) : 230, flexShrink: 0 }} aria-label="Measured FFT spectrum" />
-    <div style={{ display: "flex", flex: compact ? 1 : undefined, minHeight: 0, borderTop: "1px solid #003333" }}>
+    <div style={{ position: "relative", flex: compact ? 52 : "0 0 230px", minHeight: 0 }}>
+      <canvas ref={fft} style={{ display: "block", position: "absolute", width: "100%", height: "100%" }} aria-label="Measured FFT spectrum" />
+    </div>
+    <div style={{ display: "flex", flex: compact ? 48 : undefined, minHeight: 0, borderTop: "1px solid #003333" }}>
       <span style={{ width: 40, padding: "8px 3px", boxSizing: "border-box", color: "#99baba", font: `9px ${mono}`,
         display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
         <span>0 s</span><span>−{Number((7 / speed).toFixed(2))}s</span></span>

@@ -46,15 +46,17 @@ function Waterfall({ frame, width, speed, height }: { frame: WaterfallFrame | nu
   </Canvas>;
 }
 
-export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative, sgbDetections, fgbDetections, compact = false, height }: {
+export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative, sgbDetections, fgbDetections, compact = false }: {
   line: SpectrumEvent | null; epoch: number; floor: number; range: number; average: number;
   channels: AcquisitionChannel[]; centerHz: number; speed: number; automatic: boolean; calibrationDb: number; relative: boolean;
   sgbDetections: number; fgbDetections: number;
-  compact?: boolean; height?: number;
+  compact?: boolean;
 }) {
-  const fftHeight = compact ? Math.max(70, ((height ?? 400) - 60) * .52) : 230;
-  const waterfallHeight = compact ? Math.max(30, (height ?? 400) - fftHeight - 60) : 180;
-  const [width, setWidth] = useState(0);
+  const [fftSize, setFftSize] = useState({ width: 0, height: 0 });
+  const [compactWaterfallHeight, setCompactWaterfallHeight] = useState(0);
+  const { width } = fftSize;
+  const fftHeight = compact ? fftSize.height : 230;
+  const waterfallHeight = compact ? compactWaterfallHeight : 180;
   const [trace, setTrace] = useState<number[]>([]);
   const [frame, setFrame] = useState<WaterfallFrame | null>(null);
   const [error, setError] = useState("");
@@ -131,7 +133,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     return path.detach();
   }, [trace, width, calibrationDb, fftHeight]);
 
-  return <View style={[styles.scope, compact && { marginHorizontal: 0, height }]} accessibilityLabel="Spectrum and waterfall 406 to 406.100 MHz">
+  return <View style={[styles.scope, compact && styles.compactScope]} accessibilityLabel="Spectrum and waterfall 406 to 406.100 MHz">
     <View style={[styles.title, compact && { flexDirection: "column", gap: 4, paddingVertical: 5, paddingHorizontal: 4 }]}>
       {!compact && <Text style={[styles.titleText, compact && { flex: 0 }]}>FFT  406.000 — 406.100 MHz</Text>}
       <View style={{ flexDirection: "row" }}>
@@ -139,8 +141,11 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
         <DetectionActivity generation="SGB" detections={sgbDetections} />
       </View>
       {!compact && <Text style={[styles.titleText, { textAlign: "right" }]}>{relative ? "Relative level · WAV" : `Estimated dBm · offset ${calibrationDb.toFixed(1)} dB`}</Text>}</View>
-    <View onLayout={(event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width)}>
-      <Canvas style={{ width: "100%", height: fftHeight, backgroundColor: "#001000" }}>
+    <View style={compact ? styles.compactFft : undefined} onLayout={(event: LayoutChangeEvent) => {
+      const { width, height } = event.nativeEvent.layout;
+      setFftSize(previous => previous.width === width && previous.height === height ? previous : { width, height });
+    }}>
+      <Canvas style={{ width: "100%", height: compact ? "100%" : fftHeight, backgroundColor: "#001000" }}>
         <Path path={grid} style="stroke" color="#335555" strokeWidth={1}><DashPathEffect intervals={[3, 3]} /></Path>
         {width > 0 && [-150, -140, -130, -120, -110, -100, -90, -80, -70].map(db =>
           <SkiaText key={db} x={4} y={ordinate(db) + 4} text={String(db)} font={font} color="#99baba" />)}
@@ -160,7 +165,9 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
         })}
       </Canvas>
     </View>
-    <View style={styles.waterfallWrap}>
+    <View style={[styles.waterfallWrap, compact && styles.compactWaterfall]} onLayout={compact ? event => {
+      setCompactWaterfallHeight(Math.max(0, event.nativeEvent.layout.height - 1));
+    } : undefined}>
       <View style={styles.timeAxis}><Text style={styles.axisText}>0 s</Text>
         <Text style={styles.axisText}>−{Number((7 / speed).toFixed(2))}s</Text></View>
       <Waterfall frame={frame} width={Math.max(0, plot)} speed={speed} height={waterfallHeight} />
@@ -185,6 +192,9 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
 const mono = "monospace";
 const styles = StyleSheet.create({
   scope: { marginHorizontal: 18, backgroundColor: "#000", borderWidth: 1, borderColor: "#335555", borderRadius: 3, overflow: "hidden" },
+  compactScope: { flex: 1, minHeight: 0, marginHorizontal: 0 },
+  compactFft: { flex: 52, minHeight: 0, overflow: "hidden" },
+  compactWaterfall: { flex: 48, minHeight: 0, overflow: "hidden" },
   title: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 9, paddingHorizontal: 12, backgroundColor: "#001000" },
   titleText: { flex: 1, fontFamily: mono, fontSize: 10, color: "#00ffff" },
   waterfallWrap: { flexDirection: "row", borderTopWidth: 1, borderTopColor: "#003333" },

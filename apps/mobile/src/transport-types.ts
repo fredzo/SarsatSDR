@@ -5,6 +5,7 @@ export type Transport = {
   info(): Promise<Info>;
   send(command: Command): void;
   close(): void;
+  watchDevices?(listener: (devices: Info["devices"]) => void): () => void;
   // Native only: copy a WAV picked on the tablet and return its playlist name.
   pickFile?(): Promise<string | null>;
   label: string;

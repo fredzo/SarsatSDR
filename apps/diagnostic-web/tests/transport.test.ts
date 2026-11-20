@@ -6,6 +6,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { argumentsFor, Session } from "../session.js";
+import { SessionCore, type EngineHandlers } from "@sarsat/shared/session-core";
 import { nativeEventSchema, settingsSchema, startSchema, playbackProfilesSchema, playbackConfiguration,
   type Frame, type ServerEvent } from "@sarsat/shared/protocol";
 
@@ -16,6 +17,53 @@ async function defaults() {
   const result = await execute(executable, ["settings", "--json"]);
   return settingsSchema.parse(JSON.parse(result.stdout));
 }
+
+test("RTL capture and worker overflows preserve the error and restart with the same arguments; Stop cancels a retry", async t => {
+  const command = startSchema.parse({ type: "start", source: "rtl", centerHz: 406050000,
+    gainIndex: 8, agc: true, removeDc: false, noisePrerollMs: 0, settings: await defaults(), bus: 1, address: 2 });
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const events: ServerEvent[] = [];
+  const launches: { args: string[]; engine: EngineHandlers }[] = [];
+  const core = new SessionCore((args, engine) => {
+    launches.push({ args, engine });
+    return { stop() {}, kill() {} };
+  }, () => ["sgb.wav"], sample => sample, event => events.push(event));
+  const overflow = "cospas-cli: RTL-SDR I/Q acquisition queue full; sample continuity lost";
+  const workerOverflow = "cospas-cli: Worker input queue is full; block was not accepted.";
+  const fail = (message: string) => {
+    const { engine } = launches.at(-1)!;
+    engine.stderr(message);
+    engine.close(1);
+  };
+  core.start(command);
+  fail(overflow);
+  assert.equal(core.status, "retrying");
+  assert.ok(events.some(event => event.type === "error" && event.message.startsWith(overflow)));
+  assert.equal(launches.length, 1);
+  t.mock.timers.tick(1000);
+  assert.equal(launches.length, 2);
+  assert.deepEqual(launches[1].args, launches[0].args);
+  fail(workerOverflow);
+  assert.equal(core.status, "retrying");
+  assert.ok(events.some(event => event.type === "error" && event.message.startsWith(workerOverflow)));
+  t.mock.timers.tick(1000);
+  assert.equal(launches.length, 3);
+  assert.deepEqual(launches[2].args, launches[0].args);
+  fail(workerOverflow);
+  core.stop();
+  t.mock.timers.tick(1000);
+  assert.equal(core.status, "idle");
+  assert.equal(launches.length, 3);
+
+  core.start(command);
+  fail("cospas-cli: Reading RTL-SDR I/Q: LIBUSB_ERROR_NO_DEVICE");
+  assert.equal(core.status, "idle");
+  core.start({ ...command, source: "sample", sample: "sgb.wav" });
+  fail(workerOverflow);
+  assert.equal(core.status, "idle");
+  t.mock.timers.tick(1000);
+  assert.equal(launches.length, 5);
+});
 
 test("UI command validation preserves native defaults and constrains sample access", async () => {
   const settings = await defaults();

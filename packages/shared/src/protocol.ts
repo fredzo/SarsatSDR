@@ -78,7 +78,7 @@ export const nativeEventSchema = z.discriminatedUnion("type", [
   }).passthrough() }),
 ]);
 export const serverEventSchema = z.union([nativeEventSchema,
-  z.object({ type: z.literal("status"), status: z.enum(["idle", "starting", "running", "stopping"]) }),
+  z.object({ type: z.literal("status"), status: z.enum(["idle", "starting", "running", "stopping", "retrying"]) }),
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);
 export type ServerEvent = z.infer<typeof serverEventSchema>;
@@ -99,7 +99,7 @@ export type StartCommand = z.infer<typeof startSchema>;
 export const infoSchema = z.object({
   settings: settingsSchema,
   devices: z.array(z.object({ vendorId: finite, productId: finite, bus: finite, address: finite })),
-  samples: z.array(z.string()), status: z.enum(["idle", "starting", "running", "stopping"]),
+  samples: z.array(z.string()), status: z.enum(["idle", "starting", "running", "stopping", "retrying"]),
   sampleProfiles: playbackProfilesSchema,
 });
 export type Info = z.infer<typeof infoSchema>;

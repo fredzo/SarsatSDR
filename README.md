@@ -12,15 +12,21 @@ aussi en ligne de commande, sans interface.
 - Reception RTL-SDR a 921600 echantillons complexes/s, R820T/R820T2/R828D et
   RTL-SDR Blog V4, FE_AGC et douze presets de gain. Bias-T desactive.
 - Acquisition libusb asynchrone, worker DSP et files bornees ; deconnexions,
-  saturations et discontinuites signalees explicitement.
+  saturations et discontinuites signalees explicitement. Si la file DSP est
+  pleine, le bloc est conserve et resoumis. En cas de debordement fatal,
+  l'interface garde l'erreur affichee et relance l'acquisition RTL-SDR.
 - Decodage FGB/SGB, mots bruts et corriges, identification et position balise,
   frequence, horodatage, diagnostics d'acquisition et traces phase/I/Q.
 - BCH : capacite FGB BCH-1 de 3 bits, BCH-2 de 2 bits ; SGB de 6 bits.
   Limites de rejet configurables, corrections et ecarts d'en-tete affiches.
   Les trames courtes et d'orbitographie FGB ne produisent pas de statut BCH-2.
-- Interface en anglais, navigation en bas : Detection, Frames, Map, Signal,
-  Receiver, Player et Settings. Fleches autour de `Frames (x/y)` pour parcourir
-  les trames ; chaque nouvelle reception devient la selection active.
+- Interface en anglais, navigation en bas : Detection, Frames, Map, Detail, Signal,
+  Receiver, Player et Settings. Sur Android, la liste des cles RTL-SDR
+  s'actualise automatiquement au branchement ou au debranchement.
+  Fleches autour de `Frames (x/y)` pour parcourir
+  les trames visibles ; chaque nouvelle reception non filtree devient la selection active.
+  Detail transmet la trame selectionnee au decodeur COSPAS-SARSAT externe
+  quand l'onglet est affiche.
 - Detection : tableau de bord fixe en quatre zones (spectre/waterfall,
   liste des trames, detail essentiel et carte), adapte aux tablettes paysage.
   Frames : tableau a gauche et detail complet a droite, avec defilements
@@ -33,6 +39,17 @@ aussi en ligne de commande, sans interface.
   dans un meme rendu Skia sur Android pour eviter les retours arriere.
 - Historique de 200 trames, detail des champs, export JSON, carte OpenStreetMap
   et liens Google Maps / Waze. La carte requiert Internet.
+- Notifications MP3 distinctes pour BCH OK, KO et trames filtrees. Sur Android,
+  chaque son est precharge et joue une fois a volume inaudible au lancement ;
+  volume commun
+  reglable. Filtres d'affichage BCH KO et `Filter system frames` (FGB ORB / SGB SYSTM),
+  reversibles sans perdre les trames stockees ni les exclure de l'export.
+- Spinner d'acquisition et countdown FGB de 50 s par defaut, relance par chaque
+  FGB non filtree. Beeps graves a 5/4/3/2 s puis aigu a 1 s, auto-relance optionnelle ;
+  compteur croissant modulo 1000 au demarrage et apres expiration sans auto-relance.
+  Appui long : remise a zero en mode croissant jusqu'a la prochaine FGB non filtree,
+  avec un double bip, sans modifier le reglage d'auto-relance. Sons, countdown et beeps actives par defaut,
+  filtres et auto-relance desactives. Ces reglages sont memorises sur l'appareil.
 - Lecture temps reel des neuf captures embarquees ; ouverture de WAV utilisateur
   sur Android. PCM stereo I/Q 8 bits, 16 bits et flottant 32 bits.
 

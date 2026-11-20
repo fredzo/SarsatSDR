@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Frame } from "@sarsat/shared/protocol";
 import { beaconLocator } from "@sarsat/shared/beacon-position";
-import { fitExtraFields, formatFieldFrequencies, frameSummary } from "../../mobile/src/frame-summary";
+import { fitExtraFields, formatFieldFrequencies, frameDetailType, frameSummary } from "../../mobile/src/frame-summary";
 
 const frame = (generation: 1 | 2, fields: NonNullable<Frame["fields"]>): Frame => ({
   generation, mode: "normal", timeSeconds: 0, frequencyOffsetHz: 0, beaconType: generation === 1 ? "EPIRB" : "ELT",
@@ -38,7 +38,7 @@ test("SGB summary uses identification type, 23 Hex ID and emergency event withou
     field("Latitude", "-33.500000", "Encoded GNSS Location"),
     field("Longitude", "-70.750000", "Encoded GNSS Location"),
   ]));
-  assert.deepEqual(summary.info, ["SYSTM", "Reserved Type"]);
+  assert.deepEqual(summary.info, ["System Beacon", "Reserved Type"]);
   assert.deepEqual(summary.emergency, ["Manual activation by the crew"]);
   assert.equal(summary.hexId, "9C77FFFE1A7F00000000000");
   assert.equal(summary.position?.dms, `33°30'00.0"S, 70°45'00.0"W`);
@@ -46,6 +46,13 @@ test("SGB summary uses identification type, 23 Hex ID and emergency event withou
   assert.equal(summary.mainDevice, undefined);
   assert.equal(summary.auxDevice, undefined);
   assert.equal(summary.serial, undefined);
+});
+
+test("System Beacon is expanded in details without changing the frame's stored type", () => {
+  const system = { ...frame(2, []), beaconType: "SYSTM" };
+  assert.deepEqual(frameSummary(system).info, ["System Beacon"]);
+  assert.equal(system.beaconType, "SYSTM");
+  assert.equal(frameDetailType("ELT"), "ELT");
 });
 
 test("Unavailable coordinates stay unavailable and boundary coordinates format correctly", () => {

@@ -1,4 +1,5 @@
 import * as DocumentPicker from "expo-document-picker";
+import { AppState } from "react-native";
 import { infoSchema, playbackProfilesSchema, settingsSchema, startSchema } from "@sarsat/shared/protocol";
 import { SessionCore, type EngineHandlers } from "@sarsat/shared/session-core";
 import SarsatNative from "../modules/sarsat-native";
@@ -27,6 +28,28 @@ export function createTransport(handlers: TransportHandlers): Transport {
       const settings = settingsSchema.parse(JSON.parse(await SarsatNative.settings()));
       return infoSchema.parse({ settings, devices: SarsatNative.devices(), samples: samples(), status: core.status,
         sampleProfiles: playbackProfilesSchema.parse(JSON.parse(SarsatNative.readAsset("playback-profiles.json"))) });
+    },
+    watchDevices(listener) {
+      let previous: string | undefined;
+      let lastError: string | undefined;
+      const scan = () => {
+        try {
+          const devices = SarsatNative.devices();
+          const key = devices.map(d => `${d.bus}:${d.address}:${d.vendorId}:${d.productId}`).sort().join(",");
+          lastError = undefined;
+          if (key === previous) return;
+          previous = key;
+          listener(devices);
+        } catch (reason) {
+          const message = `Could not enumerate USB devices: ${String(reason)}`;
+          if (message !== lastError) handlers.event({ type: "error", message });
+          lastError = message;
+        }
+      };
+      scan();
+      const timer = setInterval(() => { if (AppState.currentState === "active") scan(); }, 1000);
+      const appState = AppState.addEventListener("change", state => { if (state === "active") scan(); });
+      return () => { clearInterval(timer); appState.remove(); };
     },
     send(command) {
       try {

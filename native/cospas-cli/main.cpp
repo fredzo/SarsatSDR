@@ -375,7 +375,15 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
     const auto submit = [&](std::span<const std::uint8_t> input) {
         if (!worker) return;
         while (poll()) {}
-        check(cs_worker_submit(worker.get(), submitted_samples, CS_IQ_CU8, input.data(), input.size(), &error), error);
+        for (;;) {
+            const auto code = cs_worker_submit(worker.get(), submitted_samples, CS_IQ_CU8,
+                                               input.data(), input.size(), &error);
+            if (code != CS_QUEUE_FULL) {
+                check(code, error);
+                break;
+            }
+            if (!poll()) check(cs_worker_wait_ready(worker.get(), &error), error);
+        }
         submitted_samples += input.size() / 2;
         while (poll()) {}
     };
@@ -461,7 +469,7 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
         check(cs_worker_get_stats(worker.get(), &snapshot, sizeof(snapshot), &error), error);
         if (submitted_samples != bytes / 2 || snapshot.accepted_blocks != blocks + (filled ? 1u : 0u) ||
             snapshot.processed_blocks != snapshot.accepted_blocks || snapshot.discontinuities ||
-            snapshot.missing_samples || snapshot.queue_full_count)
+            snapshot.missing_samples)
             throw std::runtime_error("RTL receive DSP sample accounting mismatch");
         std::stable_sort(frames.begin(), frames.end(), [](const auto& a, const auto& b) {
             return a.time_seconds < b.time_seconds;
