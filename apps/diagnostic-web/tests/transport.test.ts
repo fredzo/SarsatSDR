@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { readFile, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { argumentsFor, Session } from "../session.js";
@@ -168,7 +169,7 @@ test("FGB BCH-1 limit 2 rejects the degraded capture that the spec default of th
     gainIndex: 8, agc: false, sample, ...playback });
   const args = (fgbMaxErrors: number) => [...argumentsFor({
     ...command, settings: { ...command.settings, fgbMaxErrors },
-  }, [sample], root).filter(arg => !["--events", "--control-stdin", "--realtime"].includes(arg)), "--json"];
+  }, [sample], root).filter(arg => !["--events", "--control-stdin", "--realtime", "--show-fgb-bch-failures"].includes(arg)), "--json"];
   const [capture, strict] = await Promise.allSettled([
     execute(executable, args(settings.fgbMaxErrors)),
     execute(executable, args(2)),
@@ -184,6 +185,64 @@ test("FGB BCH-1 limit 2 rejects the degraded capture that the spec default of th
   const rejected = nativeEventSchema.parse({ type: "complete", result: JSON.parse(strict.reason.stdout) });
   assert.ok(rejected.type === "complete");
   assert.deepEqual(rejected.result.frames, []);
+  const events: ServerEvent[] = [];
+  await new Promise<void>((complete, fail) => {
+    const session = new Session(executable, root, [sample], event => {
+      events.push(event);
+      if (event.type === "status" && event.status === "idle") {
+        clearTimeout(timer);
+        complete();
+      }
+    });
+    const timer = setTimeout(() => { session.stop(); fail(new Error("Native playback timed out")); }, 10000);
+    session.start({ ...command, settings: { ...command.settings, fgbMaxErrors: 2, showBchFailures: false } });
+  });
+  assert.deepEqual(events.filter(event => event.type === "error"), []);
+  const frames = events.filter(event => event.type === "frame");
+  assert.equal(frames.length, 1);
+  assert.equal(frames[0].frame.correctionLimit, 2);
+  assert.equal(frames[0].frame.bch[0].correctedErrors, 3);
+});
+
+test("A synchronized FGB with uncorrectable BCH-1 reaches the UI transport", async () => {
+  const wav = await readFile(resolve(root, "samples", "fgb.wav"));
+  let chunk = 12;
+  while (chunk + 8 <= wav.length && wav.toString("ascii", chunk, chunk + 4) !== "data") {
+    const length = wav.readUInt32LE(chunk + 4);
+    chunk += 8 + length + (length % 2);
+  }
+  assert.ok(chunk + 8 < wav.length);
+  const sample = "fgb-ko.wav";
+  const dir = await mkdtemp(resolve(tmpdir(), "sarsat-bch-"));
+  const samples = resolve(dir, "samples");
+  try {
+    // Drop 30 ms inside BCH-1, leaving the synchronization header intact.
+    wav.fill(0, chunk + 8 + 4 * Math.round(1536000 * .67), chunk + 8 + 4 * Math.round(1536000 * .70));
+    await mkdir(samples);
+    await writeFile(resolve(samples, sample), wav);
+    const settings = { ...await defaults(), sgb: false, fgbOverPeakDb: 15, fgbAverage: .02 };
+    const command = startSchema.parse({ type: "start", source: "sample", centerHz: 406050000,
+      gainIndex: 8, agc: false, sample, noisePrerollMs: 2000, removeDc: false, settings });
+    const events: ServerEvent[] = [];
+    await new Promise<void>((complete, fail) => {
+      const session = new Session(executable, dir, [sample], event => {
+        events.push(event);
+        if (event.type === "status" && event.status === "idle") {
+          clearTimeout(timer);
+          complete();
+        }
+      });
+      const timer = setTimeout(() => { session.stop(); fail(new Error("Native playback timed out")); }, 10000);
+      session.start(command);
+    });
+    assert.deepEqual(events.filter(event => event.type === "error"), []);
+    const frames = events.filter(event => event.type === "frame");
+    assert.equal(frames.length, 1);
+    assert.equal(frames[0].frame.generation, 1);
+    assert.deepEqual(frames[0].frame.bch[0], { valid: false, correctedErrors: null });
+  } finally {
+    await rm(dir, { recursive: true });
+  }
 });
 
 test("Native JSONL supplies real spectra, decoded sample bits and bounded ENG traces", async () => {

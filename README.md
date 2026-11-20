@@ -391,8 +391,11 @@ Defauts DSP :
 | WF Auto / calibration RTL | actif / 0 dB |
 
 La limite SGB de rejet est distincte de la capacite mathematique de six corrections.
-`Show invalid / over-limit BCH` conserve explicitement les echecs et affiche
-`OVER LIMIT` si necessaire ; ce mode ne constitue pas une validation des trames.
+L'interface recoit les FGB synchronisees meme en cas d'echec BCH ou de depassement
+de la limite de correction. `Filter invalid frames` les masque sans les effacer.
+Pour les SGB, `Show invalid / over-limit SGB BCH` permet de recevoir ces echecs.
+La CLI conserve son comportement par defaut ; `--show-fgb-bch-failures` inclut
+les echecs FGB uniquement.
 Le Search Depth est affiche suivant l'echelle `position * 1,2 / 9` kHz.
 
 La FFT utilise une demi-fenetre Blackman doublee, la reponse des deux FIR

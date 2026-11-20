@@ -15,6 +15,7 @@ export function argumentsFor(command: StartCommand, samples: string[], samplePat
   if (!s.testPrn) args.push("--normal-prn-only");
   if (!s.qualityCheck) args.push("--no-quality-check");
   if (s.showBchFailures) args.push("--show-bch-failures");
+  else if (s.fgb) args.push("--show-fgb-bch-failures");
   args.push("--fgb-alpha", String(s.fgbAlpha), "--fgb-beta", String(s.fgbBeta),
     "--fgb-zeta", String(s.fgbZeta), "--fgb-average", String(s.fgbAverage),
     "--fgb-runtime-ms", String(s.fgbRuntimeMs),

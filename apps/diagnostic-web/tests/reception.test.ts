@@ -34,6 +34,15 @@ test("Display filters are reversible, combine with OR and keep source frames unc
   assert.equal(JSON.stringify(stored), original);
 });
 
+test("Over-limit FGB corrections use the KO notification and display filter", () => {
+  const preferences = receptionPreferencesSchema.parse({});
+  const overLimit = { ...frame(1, "EPIRB"), correctionLimit: 2,
+    bch: [{ valid: true, correctedErrors: 3 }] };
+  assert.equal(frameNotification(overLimit, preferences), "ko");
+  assert.equal(isFrameFiltered(overLimit, preferences), false);
+  assert.equal(frameNotification(overLimit, { ...preferences, filterInvalid: true }), "filtered");
+});
+
 test("Countdown beeps once at 5/4/3/2/1 and counts up after expiry without auto reload", () => {
   const countdown = new FgbCountdown();
   countdown.start(1000, 50);

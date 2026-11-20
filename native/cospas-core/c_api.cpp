@@ -68,7 +68,8 @@ bool flag(uint32_t value) {
 }
 
 cospas::DecoderSettings settings(const cs_config& config) {
-    if ((config.struct_size != sizeof(cs_config) && config.struct_size != offsetof(cs_config, fgb_bch2_max_errors) &&
+    if ((config.struct_size != sizeof(cs_config) && config.struct_size != offsetof(cs_config, show_fgb_bch_failures) &&
+         config.struct_size != offsetof(cs_config, fgb_bch2_max_errors) &&
          config.struct_size != offsetof(cs_config, fgb_header_errors) &&
          config.struct_size != offsetof(cs_config, sgb_feedback)) ||
         config.abi_version != CS_ABI_VERSION)
@@ -96,7 +97,8 @@ cospas::DecoderSettings settings(const cs_config& config) {
     result.sgb_max_errors = config.sgb_max_errors;
     if (config.struct_size > offsetof(cs_config, sgb_feedback)) result.sgb_feedback = config.sgb_feedback;
     if (config.struct_size > offsetof(cs_config, fgb_header_errors)) result.fgb_header_errors = config.fgb_header_errors;
-    if (config.struct_size == sizeof(cs_config)) result.fgb_bch2_max_errors = config.fgb_bch2_max_errors;
+    if (config.struct_size > offsetof(cs_config, fgb_bch2_max_errors)) result.fgb_bch2_max_errors = config.fgb_bch2_max_errors;
+    if (config.struct_size == sizeof(cs_config)) result.show_fgb_bch_failures = flag(config.show_fgb_bch_failures);
     return result;
 }
 
@@ -365,7 +367,8 @@ extern "C" {
 uint32_t CS_CALL cs_abi_version(void) { return CS_ABI_VERSION; }
 
 cs_status CS_CALL cs_config_init(cs_config* config, size_t config_size, cs_error* error) {
-    if (!config || (config_size < sizeof(cs_config) && config_size != offsetof(cs_config, fgb_bch2_max_errors) &&
+    if (!config || (config_size < sizeof(cs_config) && config_size != offsetof(cs_config, show_fgb_bch_failures) &&
+                    config_size != offsetof(cs_config, fgb_bch2_max_errors) &&
                     config_size != offsetof(cs_config, fgb_header_errors) &&
                     config_size != offsetof(cs_config, sgb_feedback)))
         return status(error, CS_INVALID_ARGUMENT, "Configuration output buffer is too small or NULL");
@@ -378,7 +381,7 @@ cs_status CS_CALL cs_config_init(cs_config* config, size_t config_size, cs_error
         defaults.sgb_detection_threshold, defaults.quality_check, defaults.search_depth,
         defaults.prn_alignment, defaults.sgb_filter, defaults.sgb_phase_gain,
         defaults.sgb_frequency_gain, defaults.sgb_max_errors,         defaults.sgb_feedback, defaults.fgb_header_errors,
-                defaults.fgb_bch2_max_errors
+                defaults.fgb_bch2_max_errors, defaults.show_fgb_bch_failures
     };
     std::memcpy(config, &initialized, initialized.struct_size);
     return status(error, CS_OK, "");

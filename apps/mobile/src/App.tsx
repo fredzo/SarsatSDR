@@ -25,7 +25,7 @@ import { createFmAudio } from "./fm-audio";
 import { OfficialDecoder } from "./OfficialDecoder";
 
 type Entry = { id: number; frame: Frame; received: string; source: string; centerHz: number };
-type Action = { label: string; icon: LucideIcon; run: () => void };
+type Action = { label: string; icon: LucideIcon; run: () => void; kind?: "stop" };
 function ActionPopup({ title, actions, close }: { title: string; actions: Action[]; close: () => void }) {
   return <Modal transparent animationType="fade" onRequestClose={close}>
     <View style={s.popupBackdrop}>
@@ -36,7 +36,7 @@ function ActionPopup({ title, actions, close }: { title: string; actions: Action
             <X size={20} color="#fff" />
           </Pressable>
         </View>
-        {actions.map(({ label, icon, run }) => <Button key={label} title={label} icon={icon} onPress={() => { close(); run(); }} />)}
+        {actions.map(({ label, icon, run, kind }) => <Button key={label} title={label} icon={icon} kind={kind} onPress={() => { close(); run(); }} />)}
       </View>
     </View>
   </Modal>;
@@ -447,6 +447,7 @@ export default function App() {
   playSoundRef.current = playSound;
   const [countdownStart, setCountdownStart] = useState<CountdownStart | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [line, setLine] = useState<SpectrumEvent | null>(null);
   const [channels, setChannels] = useState<AcquisitionChannel[]>([]);
@@ -628,11 +629,15 @@ export default function App() {
     automatic={waterfallAutomatic} calibrationDb={session?.source === "rtl" ? calibrationDb : 0} relative={session?.source === "sample"} />;
   const frameActions = <View style={[s.row, { padding: 8 }]}>
     <Text style={[s.h3, { flex: 1, marginBottom: 0 }]}>FRAMES ({frameCount})</Text>
-    <Button iconOnly icon={Eraser} title="Clear frames" onPress={() => { setEntries([]); setSelected(null); }} />
+    <Button iconOnly icon={Eraser} title="Clear frames" disabled={!entries.length} onPress={() => setConfirmClear(true)} />
     <Button iconOnly icon={Download} title="Export JSON" disabled={!entries.length} onPress={exportJson} />
   </View>;
 
   return <View style={s.main}>
+    {confirmClear && <ActionPopup title="Clear all received frames?" close={() => setConfirmClear(false)} actions={[
+      { label: "Cancel", icon: X, run: () => {} },
+      { label: "Clear all frames", icon: Eraser, kind: "stop", run: () => { setEntries([]); setSelected(null); } },
+    ]} />}
     <View style={s.titlebar}><View style={s.brand}><RadioTower size={28} color="#3fe6e6" /><Text style={s.brandStrong}>SarsatSDR</Text>
       <Text style={s.brandSpan}>COSPAS-SARSAT · 406.000 MHz · FGB / SGB</Text></View>
       <View style={s.row}>
@@ -779,7 +784,7 @@ export default function App() {
               onChange={value => change("prnAlignment", Number(value))}
               items={[{ label: "Early", value: "0" }, { label: "Norm", value: "1" }, { label: "Late", value: "2" }]} />
             <View style={s.setting}><Check label="SGB Quality Check" value={settings?.qualityCheck ?? true} disabled={busy || !settings} onChange={value => change("qualityCheck", value)} /></View>
-            <View style={s.setting}><Check label="Show invalid / over-limit BCH" value={settings?.showBchFailures ?? false} disabled={busy || !settings} onChange={value => change("showBchFailures", value)} /></View>
+            <View style={s.setting}><Check label="Show invalid / over-limit SGB BCH" value={settings?.showBchFailures ?? false} disabled={busy || !settings} onChange={value => change("showBchFailures", value)} /></View>
           </View></View>
         <View style={s.row}>
           <Button icon={Usb} title="REFRESH USB" disabled={busy} onPress={() => { void refresh().catch(reason => setError(String(reason))); }} />

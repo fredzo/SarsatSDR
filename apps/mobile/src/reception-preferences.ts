@@ -16,13 +16,20 @@ export const receptionPreferencesSchema = z.object({
 export type ReceptionPreferences = z.infer<typeof receptionPreferencesSchema>;
 export type NotificationSound = "ok" | "ko" | "filtered" | "countl" | "counth";
 
+function hasBchFailure(frame: Frame) {
+  return frame.bch.some((bch, n) => {
+    const limit = n === 0 ? frame.correctionLimit : frame.bch2Limit;
+    return !bch.valid || (frame.generation === 1 && limit !== undefined && (bch.correctedErrors ?? 0) > limit);
+  });
+}
+
 export function isFrameFiltered(frame: Frame, preferences: ReceptionPreferences) {
-  return (preferences.filterInvalid && frame.bch.some(bch => !bch.valid)) ||
+  return (preferences.filterInvalid && hasBchFailure(frame)) ||
     (preferences.filterOrbitographic && (frame.generation === 1 ? frame.beaconType === "ORB" : frame.beaconType === "SYSTM"));
 }
 
 export function frameNotification(frame: Frame, preferences: ReceptionPreferences): NotificationSound | null {
   if (!preferences.notifications) return null;
   if (isFrameFiltered(frame, preferences)) return "filtered";
-  return frame.bch.every(bch => bch.valid) ? "ok" : "ko";
+  return hasBchFailure(frame) ? "ko" : "ok";
 }

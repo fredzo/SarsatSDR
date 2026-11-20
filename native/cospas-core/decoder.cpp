@@ -276,7 +276,8 @@ private:
                 {double(start_) / 230400, frequency_, count, int(best)};
         if (errors > settings_.fgb_header_errors) return {};
         const auto one = BchDecoder(7, 0x89, 3).decode(std::span(bits).subspan(24, 82));
-        if ((!one.valid || one.corrected_errors > settings_.fgb_max_errors) && !settings_.show_bch_failures)
+        if ((!one.valid || one.corrected_errors > settings_.fgb_max_errors) &&
+            !settings_.show_bch_failures && !settings_.show_fgb_bch_failures)
             return {};
         const auto& pdf1 = one.valid ? one.bits : std::vector<std::uint8_t>(bits.begin() + 24, bits.begin() + 106);
         const bool long_frame = pdf1[0] != 0;

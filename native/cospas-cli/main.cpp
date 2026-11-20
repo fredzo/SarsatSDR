@@ -189,6 +189,7 @@ bool setting_option(std::string_view arg, int& n, int argc, char** argv, cs_conf
     else if (arg == "--normal-prn-only") s.test_prn = 0;
     else if (arg == "--test-prn-only") s.normal_prn = 0;
     else if (arg == "--show-bch-failures") s.show_bch_failures = 1;
+    else if (arg == "--show-fgb-bch-failures") s.show_fgb_bch_failures = 1;
     else if (arg == "--no-quality-check") s.quality_check = 0;
     else {
         if (n + 1 >= argc) return false;
@@ -252,6 +253,7 @@ constexpr std::string_view usage =
     "  --block-samples N       Use incremental decoder with positive input block size\n"
     "  --worker-queue N        Decode on DSP thread with N input/output slots; requires --block-samples\n"
     "  --show-bch-failures     Include invalid words, with explicit BCH status\n"
+    "  --show-fgb-bch-failures Include invalid or over-limit FGB words only\n"
     "  --no-quality-check     Disable SGB quality gate\n"
     "  --verbose              Write acquisition trials to stderr\n"
     "  --events               JSONL UI events: spectrum, frames, ENG, metrics, final result\n"

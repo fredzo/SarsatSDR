@@ -58,6 +58,7 @@ struct DecoderSettings {
     float sgb_feedback{4.0f};
     int fgb_header_errors{2};
     int fgb_bch2_max_errors{2};
+    bool show_fgb_bch_failures{false};
 };
 
 struct Frame {
