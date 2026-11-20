@@ -1,8 +1,10 @@
 #include "../cospas-cli/telemetry.hpp"
+#include "../cospas-cli/fgb_fm.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <numbers>
+#include <sstream>
 #include <stdexcept>
 #include <vector>
 
@@ -62,6 +64,38 @@ int main() {
         }
         outside.push(input);
         if (outside_lines != 5) throw std::runtime_error("Missing out-of-band spectra");
+        std::ostringstream audio;
+        cospas::cli::FgbFm fm(921600, -70000, cospas::cli::FgbFm::default_squelch_db, 2, audio);
+        cs_acquisition candidates{};
+        candidates.fgb_channels[0] = {1, 1000, -40};
+        candidates.fgb_channels[1] = {1, 2000, -20};
+        candidates.fgb_channels[2] = {1, 4000, -10};
+        candidates.fgb_above_noise_db[0] = 15;
+        candidates.fgb_above_noise_db[1] = 30;
+        candidates.fgb_above_noise_db[2] = 14;
+        const auto block = std::span(input).first(921600 / 50);
+        fm.select(candidates, 1.999);
+        fm.push(block);
+        fm.flush();
+        if (!audio.str().empty()) throw std::runtime_error("FM squelch opened before the RTL startup delay");
+        fm.select(candidates, 2);
+        fm.push(block);
+        candidates.fgb_channels[0].level_dbfs = -10;
+        fm.select(candidates, 2.02);
+        fm.push(block);
+        candidates.fgb_channels[1].active = 0;
+        fm.select(candidates, 2.04);
+        fm.push(block);
+        candidates.fgb_channels[0].active = 0;
+        fm.select(candidates, 2.06);
+        fm.push(block);
+        fm.flush();
+        std::istringstream chunks(audio.str());
+        std::string first, second, extra;
+        if (!std::getline(chunks, first) || first.find("\"channel\":1") == std::string::npos ||
+            !std::getline(chunks, second) || second.find("\"channel\":0") == std::string::npos ||
+            std::getline(chunks, extra))
+            throw std::runtime_error("FM must select the strongest candidate, keep it until it ends, and stay silent without candidates");
         std::cout << "Native UI spectrum: 10 Hz, 1024 bins, RF mapping and dBFS verified\n";
         return 0;
     } catch (const std::exception& error) {

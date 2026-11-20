@@ -8,7 +8,11 @@ import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbManager
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.os.Build
+import android.util.Base64
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
@@ -22,6 +26,43 @@ class SarsatNativeModule : Module() {
   private val samplesDir: File get() = File(context.filesDir, "samples").apply { mkdirs() }
   private var engine: Thread? = null
   private var connection: UsbDeviceConnection? = null
+  private var fmTrack: AudioTrack? = null
+
+  @Synchronized
+  private fun resetFm() {
+    fmTrack?.release()
+    fmTrack = null
+  }
+
+  @Synchronized
+  private fun setFmVolume(volume: Double) {
+    fmTrack?.setVolume(volume.toFloat())
+  }
+
+  @Synchronized
+  private fun writeFm(pcm: String, volume: Double) {
+    val bytes = Base64.decode(pcm, Base64.NO_WRAP)
+    val rate = 12000
+    val encoding = AudioFormat.ENCODING_PCM_16BIT
+    val channels = AudioFormat.CHANNEL_OUT_MONO
+    val track = fmTrack ?: AudioTrack.Builder()
+      .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+      .setAudioFormat(AudioFormat.Builder().setSampleRate(rate).setEncoding(encoding).setChannelMask(channels).build())
+      .setTransferMode(AudioTrack.MODE_STREAM)
+      .setBufferSizeInBytes(maxOf(rate * 2 / 4, AudioTrack.getMinBufferSize(rate, channels, encoding)))
+      .build().also {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) it.setStartThresholdInFrames(rate / 50)
+        fmTrack = it
+      }
+    track.setVolume(volume.toFloat())
+    val written = track.write(bytes, 0, bytes.size, AudioTrack.WRITE_NON_BLOCKING)
+    if (written < 0) {
+      resetFm()
+      throw CodedException("FM PCM output failed (AudioTrack code $written)")
+    }
+    if (written > 0 && track.playState != AudioTrack.PLAYSTATE_PLAYING) track.play()
+  }
 
   private fun supported(device: UsbDevice) =
     NativeEngine.supportedIds().contains(device.vendorId shl 16 or device.productId)
@@ -147,5 +188,9 @@ class SarsatNativeModule : Module() {
     }
 
     Function("stop") { NativeEngine.stop() }
+    Function("writeFm") { pcm: String, volume: Double -> writeFm(pcm, volume) }
+    Function("setFmVolume") { volume: Double -> setFmVolume(volume) }
+    Function("resetFm") { resetFm() }
+    OnDestroy { resetFm() }
   }
 }

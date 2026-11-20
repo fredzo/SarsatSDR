@@ -171,15 +171,17 @@ public:
     bool active() const { return runtime_ms_ > 0; }
     double frequency() const { return frequency_; }
     float level_dbfs() const { return level_dbfs_; }
+    float above_noise_db() const { return above_noise_db_; }
     void reset() {
         runtime_ms_ = -201;
         first_.reset();
         second_.reset();
         third_.reset();
     }
-    void start(double frequency, std::uint64_t sample, float level_dbfs) {
+    void start(double frequency, std::uint64_t sample, float level_dbfs, float above_noise_db) {
         frequency_ = frequency;
         level_dbfs_ = level_dbfs;
+        above_noise_db_ = above_noise_db;
         start_ = sample;
         runtime_ms_ = float(settings_.fgb_runtime_ms);
         count_ = 0;
@@ -304,7 +306,7 @@ private:
     DecodeDiagnostics& diagnostics_;
     FirDecimator first_, second_, third_;
     float runtime_ms_{-201};
-    float level_dbfs_{};
+    float level_dbfs_{}, above_noise_db_{};
     double frequency_{}, nco_phase_{};
     float phase_{}, frequency_error_{}, frequency_average_{};
     std::uint64_t start_{};
@@ -370,7 +372,7 @@ public:
                 if (peak >= settings.fgb_over_peak_db) {
                     ++diagnostics.fgb_candidates;
                     channel.start((best - 1023) * 56.25, base,
-                                  power[std::size_t(best)] + 58 - float(20 * std::log10(2048 * .42)));
+                                  power[std::size_t(best)] + 58 - float(20 * std::log10(2048 * .42)), peak);
                 }
             }
             std::move(spectrum_buffer.begin() + 2048, spectrum_buffer.begin() + static_cast<std::ptrdiff_t>(available),
@@ -391,7 +393,8 @@ public:
             frames.push_back(std::move(*frame));
         }
         for (std::size_t n = 0; n < channels.size(); ++n)
-            diagnostics.fgb_channels[n] = {channels[n].active(), channels[n].frequency(), channels[n].level_dbfs()};
+            diagnostics.fgb_channels[n] = {channels[n].active(), channels[n].frequency(),
+                channels[n].level_dbfs(), channels[n].above_noise_db()};
         base += 1600;
     }
 private:

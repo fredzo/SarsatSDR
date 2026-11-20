@@ -13,6 +13,9 @@ type SarsatNative = {
   prepareSample(name: string): Promise<string>;
   start(args: string[]): Promise<void>;
   stop(): void;
+  writeFm(pcm: string, volume: number): void;
+  setFmVolume(volume: number): void;
+  resetFm(): void;
   addListener<K extends keyof NativeEvents>(name: K, listener: NativeEvents[K]): EventSubscription;
 };
 

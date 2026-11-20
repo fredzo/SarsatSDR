@@ -71,6 +71,10 @@ export const nativeEventSchema = z.discriminatedUnion("type", [
     .refine(channels => new Set(channels.map(channel => channel.channel)).size === channels.length,
       "Duplicate FGB channel") }),
   z.object({ type: z.literal("frame"), frame: frameSchema }),
+  z.object({ type: z.literal("fmAudio"), channel: z.number().int().min(0).max(3),
+    pcm: z.string().min(4).max(1280).regex(/^[A-Za-z0-9+/]+={0,2}$/)
+      .refine(text => text.length % 4 === 0 && (text.length / 4 * 3 -
+        (text.endsWith("==") ? 2 : text.endsWith("=") ? 1 : 0)) % 2 === 0) }),
   z.object({ type: z.literal("metrics"), samples: finite.nonnegative(), diagnostics: diagnosticsSchema,
     gainIndex: finite.optional(), clippedSamples: finite.optional() }),
   z.object({ type: z.literal("complete"), result: z.object({
@@ -92,6 +96,8 @@ export const startSchema = z.object({
   sample: z.string().max(128).optional(),
   removeDc: z.boolean(), noisePrerollMs: z.number().int().min(0).max(10000),
   settings: settingsSchema,
+  fgbFm: z.boolean().optional(),
+  fgbFmSquelchDb: z.number().finite().min(0).max(60).optional(),
 }).refine(s => (s.bus === undefined) === (s.address === undefined), "Bus and address must be specified together");
 export const commandSchema = z.union([startSchema, z.object({ type: z.literal("stop") })]);
 export type StartCommand = z.infer<typeof startSchema>;

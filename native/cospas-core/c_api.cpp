@@ -146,6 +146,7 @@ void describe(cs_result* result, const cospas::DecodeDiagnostics& diagnostics) {
     for (size_t n = 0; n < diagnostics.fgb_channels.size(); ++n) {
         const auto& channel = diagnostics.fgb_channels[n];
         result->acquisition.fgb_channels[n] = {channel.active, channel.frequency_hz, channel.level_dbfs};
+        result->acquisition.fgb_above_noise_db[n] = channel.above_noise_db;
     }
     std::stable_sort(result->frames.begin(), result->frames.end(), [](const auto& a, const auto& b) {
         return a.time_seconds < b.time_seconds;
@@ -414,9 +415,10 @@ cs_status CS_CALL cs_result_get_diagnostics(const cs_result* result, cs_diagnost
 
 cs_status CS_CALL cs_result_get_acquisition(const cs_result* result, cs_acquisition* output,
                                             size_t output_size, cs_error* error) {
-    if (!result || !output || output_size < sizeof(cs_acquisition))
+    if (!result || !output || (output_size < sizeof(cs_acquisition) &&
+                              output_size != offsetof(cs_acquisition, fgb_above_noise_db)))
         return status(error, CS_INVALID_ARGUMENT, "Invalid acquisition result or output buffer");
-    *output = result->acquisition;
+    std::memcpy(output, &result->acquisition, std::min(output_size, sizeof(cs_acquisition)));
     return status(error, CS_OK, "");
 }
 
@@ -589,11 +591,12 @@ cs_status CS_CALL cs_worker_get_diagnostics(cs_worker* worker, cs_diagnostics* o
 
 cs_status CS_CALL cs_worker_get_acquisition(cs_worker* worker, cs_acquisition* output,
                                             size_t output_size, cs_error* error) {
-    if (!worker || !output || output_size < sizeof(cs_acquisition))
+    if (!worker || !output || (output_size < sizeof(cs_acquisition) &&
+                              output_size != offsetof(cs_acquisition, fgb_above_noise_db)))
         return status(error, CS_INVALID_ARGUMENT, "Worker acquisition buffer is too small or NULL");
     const std::unique_lock lock(worker->diagnostics_mutex, std::try_to_lock);
     if (!lock.owns_lock()) return status(error, CS_AGAIN, "DSP acquisition snapshot is being updated");
-    *output = worker->latest_acquisition;
+    std::memcpy(output, &worker->latest_acquisition, std::min(output_size, sizeof(cs_acquisition)));
     return status(error, CS_OK, "");
 }
 

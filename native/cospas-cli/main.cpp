@@ -5,6 +5,7 @@
 #include "rtl2832.hpp"
 #include "rtl_iq_capture.hpp"
 #include "telemetry.hpp"
+#include "fgb_fm.hpp"
 
 #include <libusb.h>
 
@@ -254,6 +255,8 @@ constexpr std::string_view usage =
     "  --no-quality-check     Disable SGB quality gate\n"
     "  --verbose              Write acquisition trials to stderr\n"
     "  --events               JSONL UI events: spectrum, frames, ENG, metrics, final result\n"
+    "  --fgb-fm               Include FGB FM PCM events; requires --events\n"
+    "  --fgb-fm-squelch-db N   FM threshold above noise, 0..60 dB (default 15)\n"
     "  --realtime             Pace WAV playback; requires --events\n"
     "  --control-stdin        Stop gracefully on stop<LF> or pipe EOF; requires --events\n"
     "  --continuous           Receive until control stop; requires --events --control-stdin\n";
@@ -273,6 +276,8 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
         "  --usb-fd N             Use an already opened USB descriptor (Android)\n" +
         (decoding ? "  --fgb-only|--sgb-only   Decode one generation (default both)\n"
                     "  --events               Stream JSONL UI events with 10 Hz native spectra\n"
+                    "  --fgb-fm               Include FGB FM PCM events; requires --events\n"
+                    "  --fgb-fm-squelch-db N   FM threshold above noise, 0..60 dB (default 15)\n"
                     "  --control-stdin        Stop on stop<LF> or control pipe EOF\n"
                     "  --continuous           Receive until stopped; requires --events --control-stdin\n" : "");
     if (argc == 3 && std::string_view(argv[2]) == "--help") {
@@ -282,7 +287,8 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
     std::uint32_t frequency = 0;
     std::optional<int> gain, bus, address, usb_fd;
     double seconds = 2;
-    bool automatic = false, events = false, continuous = false, control_stdin = false;
+    double fm_squelch_db = cospas::cli::FgbFm::default_squelch_db;
+    bool automatic = false, events = false, continuous = false, control_stdin = false, fgb_fm = false;
     cs_config settings{};
     cs_error error{};
     check(cs_config_init(&settings, sizeof(settings), &error), error);
@@ -296,6 +302,8 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
         else if (arg == "--usb-fd" && n + 1 < argc) usb_fd = number<int>(argv[++n], arg);
         else if (arg == "--agc") automatic = true;
         else if (decoding && arg == "--events") events = true;
+        else if (decoding && arg == "--fgb-fm") fgb_fm = true;
+        else if (decoding && arg == "--fgb-fm-squelch-db" && n + 1 < argc) fm_squelch_db = number<double>(argv[++n], arg);
         else if (decoding && arg == "--continuous") continuous = true;
         else if (decoding && arg == "--control-stdin") control_stdin = true;
         else if (decoding && setting_option(arg, n, argc, argv, settings)) {}
@@ -316,6 +324,9 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
     if (continuous && !events) throw std::invalid_argument("--continuous requires --events");
     if (continuous && !control_stdin) throw std::invalid_argument("--continuous requires --control-stdin");
     if (control_stdin && !events) throw std::invalid_argument("--control-stdin requires --events");
+    if (fgb_fm && !events) throw std::invalid_argument("--fgb-fm requires --events");
+    if (!(fm_squelch_db >= 0 && fm_squelch_db <= 60))
+        throw std::invalid_argument("--fgb-fm-squelch-db must be between 0 and 60 dB");
     if (usb_fd && (*usb_fd < 0 || bus)) throw std::invalid_argument("--usb-fd requires a valid descriptor without --bus");
     auto devices = usb_fd ? std::vector<cospas::RtlUsbDeviceInfo>{{.fd = *usb_fd}} : cospas::enumerate_rtl_usb_devices();
     if (bus) {
@@ -332,6 +343,7 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
     receiver.initialize(tuner_frequency);
     const auto status = receiver.status();
     const auto mixer_hz = static_cast<float>(double(offset_hz) + tuner_frequency - *status.actual_frequency_hz);
+    cospas::cli::FgbFm fm(cospas::rtl_sample_rate_hz, mixer_hz, fm_squelch_db, 2);
     std::size_t spectrum_gain = *gain;
     std::unique_ptr<cospas::cli::Spectrum> spectrum;
     if (events) spectrum = std::make_unique<cospas::cli::Spectrum>(
@@ -432,6 +444,16 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
                 if (observation.gain_changed) ++gain_changes;
                 submit(block);
                 ++blocks;
+                if (fgb_fm && settings.fgb) {
+                    if (blocks % 4 == 0) {
+                        cs_acquisition acquisition{};
+                        const auto code = cs_worker_get_acquisition(worker.get(), &acquisition, sizeof(acquisition), &error);
+                        if (code == CS_OK) fm.select(acquisition, std::min(elapsed,
+                            double(blocks - 1) * cospas::rtl_block_samples / cospas::rtl_sample_rate_hz));
+                        else if (code != CS_AGAIN) check(code, error);
+                    }
+                    fm.push(block);
+                }
                 if (spectrum) {
                     spectrum_gain = *frontend.gain_index();
                     spectrum->push_cu8(block);
@@ -457,6 +479,7 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
         }
     }
     capture.stop();
+    fm.flush();
     if (!stopped) throw std::runtime_error(label + " acquisition ended before the requested duration");
     const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
     if (blocks == 0) throw std::runtime_error(label + " received no complete 6400-sample I/Q block");
@@ -588,7 +611,8 @@ int cospas_cli_run(int argc, char** argv) {
         check(cs_config_init(&settings, sizeof(settings), &error), error);
         bool verbose = false;
         bool remove_dc = false;
-        bool events = false, realtime = false, control_stdin = false;
+        bool events = false, realtime = false, control_stdin = false, fgb_fm = false;
+        double fm_squelch_db = cospas::cli::FgbFm::default_squelch_db;
         int noise_preroll_ms = 0;
         std::size_t block_samples = 0;
         std::size_t worker_queue = 0;
@@ -599,6 +623,8 @@ int cospas_cli_run(int argc, char** argv) {
             if (setting_option(arg, n, argc, argv, settings)) {}
             else if (arg == "--input" && n + 1 < argc) input = argv[++n];
             else if (arg == "--events") events = true;
+            else if (arg == "--fgb-fm") fgb_fm = true;
+            else if (arg == "--fgb-fm-squelch-db" && n + 1 < argc) fm_squelch_db = number<double>(argv[++n], arg);
             else if (arg == "--realtime") realtime = true;
             else if (arg == "--control-stdin") control_stdin = true;
             else if (arg == "--verbose") verbose = true;
@@ -624,9 +650,15 @@ int cospas_cli_run(int argc, char** argv) {
             throw std::invalid_argument("--worker-queue requires --block-samples");
         if (realtime && !events) throw std::invalid_argument("--realtime requires --events");
         if (control_stdin && !events) throw std::invalid_argument("--control-stdin requires --events");
+        if (fgb_fm && !events) throw std::invalid_argument("--fgb-fm requires --events");
+        if (!(fm_squelch_db >= 0 && fm_squelch_db <= 60))
+            throw std::invalid_argument("--fgb-fm-squelch-db must be between 0 and 60 dB");
         if (events && worker_queue) throw std::invalid_argument("--events uses the incremental decoder directly");
         const auto started = std::chrono::steady_clock::now();
         auto signal = cospas::read_wav(input);
+        if (fgb_fm && signal.sample_rate_hz < cospas::cli::FgbFm::audio_rate * 4)
+            throw std::invalid_argument("--fgb-fm requires a WAV sample rate of at least 48 kHz");
+        cospas::cli::FgbFm fm(signal.sample_rate_hz, 0, fm_squelch_db);
         const auto original_samples = signal.samples.size();
         std::complex<double> dc_offset{};
         if (remove_dc) {
@@ -654,8 +686,9 @@ int cospas_cli_run(int argc, char** argv) {
         cs_diagnostics diagnostics{};
         std::vector<cs_frame> frames;
         std::unique_ptr<cospas::cli::Spectrum> spectrum;
+        const bool fine_audio_blocks = events && fgb_fm && settings.fgb && !block_samples;
         if (events) {
-            if (!block_samples) block_samples = signal.sample_rate_hz / 10;
+            if (!block_samples) block_samples = signal.sample_rate_hz / (fine_audio_blocks ? 40 : 10);
             spectrum = std::make_unique<cospas::cli::Spectrum>(signal.sample_rate_hz, 406050000,
                 [&](const auto& line, double time, float) { emit_spectrum(line, time - double(noise_preroll_ms) / 1000); });
             std::cout << "{\"type\":\"session\",\"source\":\"sample\",\"sampleRateHz\":" << signal.sample_rate_hz
@@ -663,9 +696,9 @@ int cospas_cli_run(int argc, char** argv) {
                       << ",\"noisePrerollMs\":" << noise_preroll_ms
                       << ",\"dcRemovalApplied\":" << (remove_dc ? "true" : "false") << "}\n" << std::flush;
         }
-        const auto collect = [&](cs_result* decoded) {
+        const auto collect = [&](cs_result* decoded, bool acquisition_tick = true) {
             if (events) {
-                emit_acquisition(decoded);
+                if (acquisition_tick) emit_acquisition(decoded);
                 emit_frames(decoded, double(noise_preroll_ms) / 1000);
             }
             collect_result(decoded, diagnostics, frames, double(noise_preroll_ms) / 1000);
@@ -726,18 +759,31 @@ int cospas_cli_run(int argc, char** argv) {
                 const auto count = std::min(block_samples, signal.samples.size() - position);
                 check(cs_stream_push(stream.get(), position, CS_IQ_CF32, signal.samples.data() + position,
                                      count * sizeof(cospas::Sample), &decoded, &error), error);
-                collect(decoded);
+                if (fgb_fm && settings.fgb) {
+                    cs_acquisition acquisition{};
+                    check(cs_result_get_acquisition(decoded, &acquisition, sizeof(acquisition), &error), error);
+                    fm.select(acquisition);
+                    const auto preroll = std::size_t(signal.sample_rate_hz) * std::size_t(noise_preroll_ms) / 1000;
+                    const auto audio_start = std::max(position, preroll);
+                    if (audio_start < position + count)
+                        fm.push(std::span(signal.samples).subspan(audio_start, position + count - audio_start));
+                }
+                const bool tick = !fine_audio_blocks || (position / block_samples + 1) % 4 == 0;
+                collect(decoded, tick);
                 if (spectrum) {
                     spectrum->push(std::span(signal.samples).subspan(position, count));
-                    std::cout << "{\"type\":\"metrics\",\"samples\":" << position + count << ",\"diagnostics\":";
-                    write_diagnostics(diagnostics);
-                    std::cout << "}\n" << std::flush;
+                    if (tick) {
+                        std::cout << "{\"type\":\"metrics\",\"samples\":" << position + count << ",\"diagnostics\":";
+                        write_diagnostics(diagnostics);
+                        std::cout << "}\n" << std::flush;
+                    }
                 }
                 position += count;
                 if (realtime)
                     std::this_thread::sleep_until(play_started + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                         std::chrono::duration<double>(double(position) / signal.sample_rate_hz)));
             }
+            fm.flush();
             check(cs_stream_finish(stream.get(), &decoded, &error), error);
             collect(decoded);
         } else {

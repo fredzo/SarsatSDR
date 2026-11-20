@@ -39,6 +39,12 @@ aussi en ligne de commande, sans interface.
   dans un meme rendu Skia sur Android pour eviter les retours arriere.
 - Historique de 200 trames, detail des champs, export JSON, carte OpenStreetMap
   et liens Google Maps / Waze. La carte requiert Internet.
+- Audio FM FGB sur RTL-SDR et WAV (Android et Web), active par defaut et
+  volume par defaut a 50 %, independant des notifications. Squelch reglable
+  de 0 a 60 dB au-dessus du bruit (15 dB par defaut), applique au prochain
+  demarrage sans modifier la detection FGB. Le candidat admissible le plus fort
+  reste a l'ecoute jusqu'a sa disparition, sans attendre le BCH. Audio FM
+  coupe pendant les 2 premieres secondes de chaque acquisition RTL-SDR.
 - Notifications MP3 distinctes pour BCH OK, KO et trames filtrees. Sur Android,
   chaque son est precharge et joue une fois a volume inaudible au lancement ;
   volume commun

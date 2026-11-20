@@ -78,7 +78,7 @@ struct Frame {
 };
 
 struct DecodeDiagnostics {
-    struct FgbChannel { bool active{}; double frequency_hz{}; float level_dbfs{}; };
+    struct FgbChannel { bool active{}; double frequency_hz{}; float level_dbfs{}, above_noise_db{}; };
     std::array<FgbChannel, 4> fgb_channels{};
     struct FgbTrial { double time_seconds{}, frequency_hz{}; int votes{}, offset{}; };
     float fgb_max_peak_db{};

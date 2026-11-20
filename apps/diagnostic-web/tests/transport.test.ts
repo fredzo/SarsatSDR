@@ -18,6 +18,38 @@ async function defaults() {
   return settingsSchema.parse(JSON.parse(result.stdout));
 }
 
+test("FGB WAV playback emits non-silent FM PCM only when requested", async () => {
+  let candidatesAtDefault: string[] | undefined;
+  for (const [sample, options, expected] of [
+    ["fgb.wav", ["--fgb-only", "--fgb-fm"], true],
+    ["fgb.wav", ["--fgb-only", "--fgb-fm", "--fgb-fm-squelch-db", "60"], false],
+    ["fgb.wav", ["--fgb-only"], false],
+    ["sgb.wav", ["--sgb-only", "--fgb-fm"], false],
+  ] as const) {
+    const result = await execute(executable, ["decode", "--input", resolve(root, "samples", sample), "--events", ...options],
+      { maxBuffer: 8 * 1024 * 1024, timeout: 15000 }).catch(error => {
+      if (error.code === 2) return { stdout: String(error.stdout) };
+      throw error;
+    });
+    const events = result.stdout.trim().split(/\r?\n/).map(line => nativeEventSchema.parse(JSON.parse(line)));
+    if (sample === "fgb.wav" && options.some(option => option === "--fgb-fm")) {
+      const candidates = events.filter(event => event.type === "acquisition" && event.channels.length)
+        .map(event => JSON.stringify(event));
+      assert.ok(candidates.length > 0);
+      if (expected) candidatesAtDefault = candidates;
+      else assert.deepEqual(candidates, candidatesAtDefault, "The squelch must not change FGB detection");
+    }
+    const chunks = events.filter(event => event.type === "fmAudio");
+    if (!expected) { assert.equal(chunks.length, 0); continue; }
+    const audio = Buffer.concat(chunks.map(chunk => Buffer.from(chunk.pcm, "base64")));
+    assert.ok(audio.length >= 4800, "PCM should contain at least 200 ms of the burst");
+    assert.equal(audio.length % 2, 0);
+    let peak = 0;
+    for (let n = 0; n < audio.length; n += 2) peak = Math.max(peak, Math.abs(audio.readInt16LE(n)));
+    assert.ok(peak >= 1024, "Expected audible, non-silent FM samples");
+  }
+});
+
 test("RTL capture and worker overflows preserve the error and restart with the same arguments; Stop cancels a retry", async t => {
   const command = startSchema.parse({ type: "start", source: "rtl", centerHz: 406050000,
     gainIndex: 8, agc: true, removeDc: false, noisePrerollMs: 0, settings: await defaults(), bus: 1, address: 2 });

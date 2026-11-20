@@ -124,6 +124,7 @@ typedef struct cs_fgb_channel {
 
 typedef struct cs_acquisition {
     cs_fgb_channel fgb_channels[4];
+    float fgb_above_noise_db[4];
 } cs_acquisition;
 
 enum {

@@ -21,6 +21,7 @@ import { AcquisitionSpinner, type CountdownStart } from "./AcquisitionSpinner";
 import { frameNotification, isFrameFiltered } from "./reception-preferences";
 import { useReceptionPreferences } from "./use-reception-preferences";
 import { useReceptionAudio } from "./use-reception-audio";
+import { createFmAudio } from "./fm-audio";
 import { OfficialDecoder } from "./OfficialDecoder";
 
 type Entry = { id: number; frame: Frame; received: string; source: string; centerHz: number };
@@ -441,6 +442,7 @@ export default function App() {
   const [error, setError] = useState("");
   const { preferences: reception, current: receptionRef, ready: preferencesReady, change: changeReception } = useReceptionPreferences(setError);
   const playSound = useReceptionAudio(setError);
+  const fmAudio = useRef<ReturnType<typeof createFmAudio> | null>(null);
   const playSoundRef = useRef(playSound);
   playSoundRef.current = playSound;
   const [countdownStart, setCountdownStart] = useState<CountdownStart | null>(null);
@@ -488,11 +490,14 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
+    const fm = createFmAudio(setError);
+    fmAudio.current = fm;
     let unwatchDevices: (() => void) | undefined;
     const handle = (message: ServerEvent) => {
       if (!active) return;
       try {
         if (message.type === "status") {
+          if (message.status === "stopping" || message.status === "retrying") fm.reset();
           if (message.status === "running" || message.status === "idle") receiverActionPending.current = false;
           setStatus(message.status);
           if (message.status !== "running") setCountdownStart(null);
@@ -500,6 +505,7 @@ export default function App() {
         }
         else if (message.type === "error") { receiverActionPending.current = false; setError(message.message); }
         else if (message.type === "session") {
+          fm.reset();
           setCountdownStart(null);
           frameSource.label = message.label ?? (message.source === "rtl" ? "RTL-SDR" : "WAV I/Q");
           frameSource.centerHz = message.centerHz;
@@ -508,6 +514,9 @@ export default function App() {
           setSgbDetections(0);
           setFgbDetections(0);
           setSession(message); setLine(null); setChannels([]); setMetrics(null); setEpoch(value => value + 1);
+        } else if (message.type === "fmAudio") {
+          const prefs = receptionRef.current;
+          if (prefs.fgbFm && prefs.fgbFmVolume > 0) fm.write(message.pcm, prefs.fgbFmVolume);
         } else if (message.type === "spectrum") setLine(message);
         else if (message.type === "acquisition") setChannels(message.channels);
         else if (message.type === "metrics") {
@@ -542,15 +551,19 @@ export default function App() {
     const created = createTransport({ event: handle, connection: (value, reason) => {
       if (!active) return;
       setConnected(value);
-      if (!value) { receiverActionPending.current = false; setCountdownStart(null); setChannels([]); setSgbDetections(0); setFgbDetections(0); if (reason) setError(reason); }
+      if (!value) { fm.reset(); receiverActionPending.current = false; setCountdownStart(null); setChannels([]); setSgbDetections(0); setFgbDetections(0); if (reason) setError(reason); }
     } });
     setTransport(created);
     void refresh(created).then(() => {
       if (!active) return;
       unwatchDevices = created.watchDevices?.(next => setInfo(previous => previous && { ...previous, devices: next }));
     }).catch(reason => { if (active) setError(String(reason)); });
-    return () => { active = false; unwatchDevices?.(); created.close(); };
+    return () => { active = false; fmAudio.current = null; fm.close(); unwatchDevices?.(); created.close(); };
   }, []);
+  useEffect(() => {
+    if (!reception.fgbFm || reception.fgbFmVolume === 0) fmAudio.current?.reset();
+    else fmAudio.current?.setVolume(reception.fgbFmVolume);
+  }, [reception.fgbFm, reception.fgbFmVolume]);
 
   const busy = status !== "idle";
   const sampleProfile = info?.sampleProfiles[sample];
@@ -565,10 +578,12 @@ export default function App() {
     }
     const location = device.split(":").map(Number);
     const parsed = startSchema.safeParse({ type: "start", source, centerHz: Math.round(center * 1e6),
-      gainIndex: gain, agc, sample, removeDc, noisePrerollMs: preroll, settings,
+      gainIndex: gain, agc, sample, removeDc, noisePrerollMs: preroll, settings, fgbFm: receptionRef.current.fgbFm,
+      fgbFmSquelchDb: receptionRef.current.fgbFmSquelchDb,
       ...(source === "sample" && useSampleProfile ? playback : {}),
       ...(device ? { bus: location[0], address: location[1] } : {}) });
     if (!parsed.success) { setError(parsed.error.issues.map(issue => issue.message).join(" · ")); return; }
+    if (parsed.data.fgbFm && parsed.data.settings.fgb) fmAudio.current?.activate();
     transport?.send(parsed.data);
     return true;
   }
@@ -725,6 +740,12 @@ export default function App() {
               onChange={value => changeReception("notifications", value)} />
             <Range label="Notification volume · %" value={Math.round(reception.volume * 100)} min={0} max={100} step={1}
               disabled={!preferencesReady} onChange={value => changeReception("volume", value / 100)} />
+            <Check label="FGB FM audio (next start)" value={reception.fgbFm} disabled={!preferencesReady}
+              onChange={value => changeReception("fgbFm", value)} />
+            <Range label="FGB FM volume · %" value={Math.round(reception.fgbFmVolume * 100)} min={0} max={100} step={1}
+              disabled={!preferencesReady || !reception.fgbFm} onChange={value => changeReception("fgbFmVolume", value / 100)} />
+            <Range label="FGB FM squelch · dB above noise (next start)" value={reception.fgbFmSquelchDb} min={0} max={60} step={1}
+              disabled={!preferencesReady || !reception.fgbFm} onChange={value => changeReception("fgbFmSquelchDb", value)} />
             <Check label="Filter invalid frames" value={reception.filterInvalid} disabled={!preferencesReady}
               onChange={value => changeReception("filterInvalid", value)} />
             <Check label="Filter system frames" value={reception.filterOrbitographic} disabled={!preferencesReady}

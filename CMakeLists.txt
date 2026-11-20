@@ -62,7 +62,7 @@ target_include_directories(cospas-cli SYSTEM PRIVATE "${FFTW_INCLUDE_DIR}")
 
 if(BUILD_TESTING)
   add_executable(telemetry-tests native/tests/telemetry_tests.cpp native/cospas-cli/telemetry.cpp "${DSP_TABLES}")
-  target_include_directories(telemetry-tests PRIVATE native/cospas-core)
+  target_include_directories(telemetry-tests PRIVATE native/cospas-core native/cospas-core/include)
   target_include_directories(telemetry-tests SYSTEM PRIVATE "${FFTW_INCLUDE_DIR}")
   target_link_libraries(telemetry-tests PRIVATE "${FFTW_LIBRARY}")
   add_test(NAME ui-native-spectrum COMMAND telemetry-tests)
