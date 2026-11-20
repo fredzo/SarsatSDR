@@ -8,10 +8,7 @@ export function argumentsFor(command: StartCommand, samples: string[], samplePat
     ? ["receive", "--frequency-hz", String(command.centerHz), "--gain-index", String(command.gainIndex), "--continuous"]
     : ["decode", "--input", samplePath(command.sample!), "--realtime"];
   args.push("--events", "--control-stdin");
-  if (s.fgb && command.fgbFm) {
-    args.push("--fgb-fm");
-    if (command.fgbFmSquelchDb !== undefined) args.push("--fgb-fm-squelch-db", String(command.fgbFmSquelchDb));
-  }
+  if (s.fgb && command.fgbFm) args.push("--fgb-fm");
   if (!s.fgb) args.push("--sgb-only");
   if (!s.sgb) args.push("--fgb-only");
   if (!s.normalPrn) args.push("--test-prn-only");

@@ -6,7 +6,6 @@ export const receptionPreferencesSchema = z.object({
   volume: z.number().finite().min(0).max(1).default(1),
   fgbFm: z.boolean().default(true),
   fgbFmVolume: z.number().finite().min(0).max(1).default(.5),
-  fgbFmSquelchDb: z.number().finite().min(0).max(60).default(15),
   filterInvalid: z.boolean().default(false),
   filterOrbitographic: z.boolean().default(false),
   countdown: z.boolean().default(true),

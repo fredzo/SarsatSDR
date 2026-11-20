@@ -256,7 +256,6 @@ constexpr std::string_view usage =
     "  --verbose              Write acquisition trials to stderr\n"
     "  --events               JSONL UI events: spectrum, frames, ENG, metrics, final result\n"
     "  --fgb-fm               Include FGB FM PCM events; requires --events\n"
-    "  --fgb-fm-squelch-db N   FM threshold above noise, 0..60 dB (default 15)\n"
     "  --realtime             Pace WAV playback; requires --events\n"
     "  --control-stdin        Stop gracefully on stop<LF> or pipe EOF; requires --events\n"
     "  --continuous           Receive until control stop; requires --events --control-stdin\n";
@@ -277,7 +276,6 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
         (decoding ? "  --fgb-only|--sgb-only   Decode one generation (default both)\n"
                     "  --events               Stream JSONL UI events with 10 Hz native spectra\n"
                     "  --fgb-fm               Include FGB FM PCM events; requires --events\n"
-                    "  --fgb-fm-squelch-db N   FM threshold above noise, 0..60 dB (default 15)\n"
                     "  --control-stdin        Stop on stop<LF> or control pipe EOF\n"
                     "  --continuous           Receive until stopped; requires --events --control-stdin\n" : "");
     if (argc == 3 && std::string_view(argv[2]) == "--help") {
@@ -287,7 +285,6 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
     std::uint32_t frequency = 0;
     std::optional<int> gain, bus, address, usb_fd;
     double seconds = 2;
-    double fm_squelch_db = cospas::cli::FgbFm::default_squelch_db;
     bool automatic = false, events = false, continuous = false, control_stdin = false, fgb_fm = false;
     cs_config settings{};
     cs_error error{};
@@ -303,7 +300,6 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
         else if (arg == "--agc") automatic = true;
         else if (decoding && arg == "--events") events = true;
         else if (decoding && arg == "--fgb-fm") fgb_fm = true;
-        else if (decoding && arg == "--fgb-fm-squelch-db" && n + 1 < argc) fm_squelch_db = number<double>(argv[++n], arg);
         else if (decoding && arg == "--continuous") continuous = true;
         else if (decoding && arg == "--control-stdin") control_stdin = true;
         else if (decoding && setting_option(arg, n, argc, argv, settings)) {}
@@ -325,8 +321,6 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
     if (continuous && !control_stdin) throw std::invalid_argument("--continuous requires --control-stdin");
     if (control_stdin && !events) throw std::invalid_argument("--control-stdin requires --events");
     if (fgb_fm && !events) throw std::invalid_argument("--fgb-fm requires --events");
-    if (!(fm_squelch_db >= 0 && fm_squelch_db <= 60))
-        throw std::invalid_argument("--fgb-fm-squelch-db must be between 0 and 60 dB");
     if (usb_fd && (*usb_fd < 0 || bus)) throw std::invalid_argument("--usb-fd requires a valid descriptor without --bus");
     auto devices = usb_fd ? std::vector<cospas::RtlUsbDeviceInfo>{{.fd = *usb_fd}} : cospas::enumerate_rtl_usb_devices();
     if (bus) {
@@ -343,7 +337,7 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
     receiver.initialize(tuner_frequency);
     const auto status = receiver.status();
     const auto mixer_hz = static_cast<float>(double(offset_hz) + tuner_frequency - *status.actual_frequency_hz);
-    cospas::cli::FgbFm fm(cospas::rtl_sample_rate_hz, mixer_hz, fm_squelch_db, 2);
+    cospas::cli::FgbFm fm(cospas::rtl_sample_rate_hz, mixer_hz, 2);
     std::size_t spectrum_gain = *gain;
     std::unique_ptr<cospas::cli::Spectrum> spectrum;
     if (events) spectrum = std::make_unique<cospas::cli::Spectrum>(
@@ -612,7 +606,6 @@ int cospas_cli_run(int argc, char** argv) {
         bool verbose = false;
         bool remove_dc = false;
         bool events = false, realtime = false, control_stdin = false, fgb_fm = false;
-        double fm_squelch_db = cospas::cli::FgbFm::default_squelch_db;
         int noise_preroll_ms = 0;
         std::size_t block_samples = 0;
         std::size_t worker_queue = 0;
@@ -624,7 +617,6 @@ int cospas_cli_run(int argc, char** argv) {
             else if (arg == "--input" && n + 1 < argc) input = argv[++n];
             else if (arg == "--events") events = true;
             else if (arg == "--fgb-fm") fgb_fm = true;
-            else if (arg == "--fgb-fm-squelch-db" && n + 1 < argc) fm_squelch_db = number<double>(argv[++n], arg);
             else if (arg == "--realtime") realtime = true;
             else if (arg == "--control-stdin") control_stdin = true;
             else if (arg == "--verbose") verbose = true;
@@ -651,14 +643,12 @@ int cospas_cli_run(int argc, char** argv) {
         if (realtime && !events) throw std::invalid_argument("--realtime requires --events");
         if (control_stdin && !events) throw std::invalid_argument("--control-stdin requires --events");
         if (fgb_fm && !events) throw std::invalid_argument("--fgb-fm requires --events");
-        if (!(fm_squelch_db >= 0 && fm_squelch_db <= 60))
-            throw std::invalid_argument("--fgb-fm-squelch-db must be between 0 and 60 dB");
         if (events && worker_queue) throw std::invalid_argument("--events uses the incremental decoder directly");
         const auto started = std::chrono::steady_clock::now();
         auto signal = cospas::read_wav(input);
         if (fgb_fm && signal.sample_rate_hz < cospas::cli::FgbFm::audio_rate * 4)
             throw std::invalid_argument("--fgb-fm requires a WAV sample rate of at least 48 kHz");
-        cospas::cli::FgbFm fm(signal.sample_rate_hz, 0, fm_squelch_db);
+        cospas::cli::FgbFm fm(signal.sample_rate_hz);
         const auto original_samples = signal.samples.size();
         std::complex<double> dc_offset{};
         if (remove_dc) {

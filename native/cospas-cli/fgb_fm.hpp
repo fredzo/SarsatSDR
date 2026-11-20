@@ -16,11 +16,10 @@ namespace cospas::cli {
 class FgbFm {
 public:
     static constexpr unsigned audio_rate = 12000;
-    static constexpr double default_squelch_db = 15;
 
-    explicit FgbFm(unsigned input_rate, double center_offset = 0, double squelch_db = default_squelch_db,
+    explicit FgbFm(unsigned input_rate, double center_offset = 0,
                    double startup_mute_seconds = 0, std::ostream& output = std::cout)
-        : input_rate_(input_rate), center_offset_(center_offset), squelch_db_(squelch_db),
+        : input_rate_(input_rate), center_offset_(center_offset),
           startup_mute_seconds_(startup_mute_seconds), output_(output) {}
 
     void select(const cs_acquisition& acquisition, double elapsed_seconds = 0) {
@@ -34,8 +33,6 @@ public:
         for (int n = 0; n < 4; ++n) {
             const auto& candidate = acquisition.fgb_channels[n];
             if (candidate.active && std::isfinite(candidate.level_dbfs) &&
-                std::isfinite(acquisition.fgb_above_noise_db[n]) &&
-                acquisition.fgb_above_noise_db[n] >= squelch_db_ &&
                 std::abs(candidate.frequency_offset_hz + center_offset_) < input_rate_ * .5 &&
                 (channel_ < 0 || candidate.level_dbfs > acquisition.fgb_channels[channel_].level_dbfs))
                 channel_ = n;
@@ -139,7 +136,7 @@ private:
     }
 
     unsigned input_rate_;
-    double center_offset_, squelch_db_, startup_mute_seconds_;
+    double center_offset_, startup_mute_seconds_;
     std::ostream& output_;
     int channel_ = -1;
     double frequency_{}, dc_{};

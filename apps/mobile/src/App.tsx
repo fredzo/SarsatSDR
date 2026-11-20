@@ -579,7 +579,6 @@ export default function App() {
     const location = device.split(":").map(Number);
     const parsed = startSchema.safeParse({ type: "start", source, centerHz: Math.round(center * 1e6),
       gainIndex: gain, agc, sample, removeDc, noisePrerollMs: preroll, settings, fgbFm: receptionRef.current.fgbFm,
-      fgbFmSquelchDb: receptionRef.current.fgbFmSquelchDb,
       ...(source === "sample" && useSampleProfile ? playback : {}),
       ...(device ? { bus: location[0], address: location[1] } : {}) });
     if (!parsed.success) { setError(parsed.error.issues.map(issue => issue.message).join(" · ")); return; }
@@ -744,8 +743,6 @@ export default function App() {
               onChange={value => changeReception("fgbFm", value)} />
             <Range label="FGB FM volume · %" value={Math.round(reception.fgbFmVolume * 100)} min={0} max={100} step={1}
               disabled={!preferencesReady || !reception.fgbFm} onChange={value => changeReception("fgbFmVolume", value / 100)} />
-            <Range label="FGB FM squelch · dB above noise (next start)" value={reception.fgbFmSquelchDb} min={0} max={60} step={1}
-              disabled={!preferencesReady || !reception.fgbFm} onChange={value => changeReception("fgbFmSquelchDb", value)} />
             <Check label="Filter invalid frames" value={reception.filterInvalid} disabled={!preferencesReady}
               onChange={value => changeReception("filterInvalid", value)} />
             <Check label="Filter system frames" value={reception.filterOrbitographic} disabled={!preferencesReady}

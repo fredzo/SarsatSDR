@@ -97,7 +97,6 @@ export const startSchema = z.object({
   removeDc: z.boolean(), noisePrerollMs: z.number().int().min(0).max(10000),
   settings: settingsSchema,
   fgbFm: z.boolean().optional(),
-  fgbFmSquelchDb: z.number().finite().min(0).max(60).optional(),
 }).refine(s => (s.bus === undefined) === (s.address === undefined), "Bus and address must be specified together");
 export const commandSchema = z.union([startSchema, z.object({ type: z.literal("stop") })]);
 export type StartCommand = z.infer<typeof startSchema>;

@@ -65,14 +65,12 @@ int main() {
         outside.push(input);
         if (outside_lines != 5) throw std::runtime_error("Missing out-of-band spectra");
         std::ostringstream audio;
-        cospas::cli::FgbFm fm(921600, -70000, cospas::cli::FgbFm::default_squelch_db, 2, audio);
+        cospas::cli::FgbFm fm(921600, -70000, 2, audio);
         cs_acquisition candidates{};
         candidates.fgb_channels[0] = {1, 1000, -40};
         candidates.fgb_channels[1] = {1, 2000, -20};
-        candidates.fgb_channels[2] = {1, 4000, -10};
-        candidates.fgb_above_noise_db[0] = 15;
-        candidates.fgb_above_noise_db[1] = 30;
-        candidates.fgb_above_noise_db[2] = 14;
+        candidates.fgb_above_noise_db[0] = 8;
+        candidates.fgb_above_noise_db[1] = 14;
         const auto make_burst = [](double frequency, bool modulated) {
             std::vector<std::complex<float>> samples(921600 / 10);
             for (std::size_t n = 0; n < samples.size(); ++n) {
@@ -123,7 +121,7 @@ int main() {
         if (!std::getline(chunks, line)) throw std::runtime_error("FM squelch did not reopen for the next candidate");
         do {
             if (line.find("\"channel\":0") == std::string::npos)
-                throw std::runtime_error("FM squelch opened on a candidate below its noise threshold");
+                throw std::runtime_error("FM squelch did not stay on the remaining candidate");
         } while (std::getline(chunks, line));
         std::cout << "Native UI spectrum: 10 Hz, 1024 bins, RF mapping and dBFS verified\n";
         return 0;

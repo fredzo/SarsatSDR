@@ -19,10 +19,8 @@ async function defaults() {
 }
 
 test("FGB WAV playback emits non-silent FM PCM only when requested", async () => {
-  let candidatesAtDefault: string[] | undefined;
   for (const [sample, options, expected] of [
     ["fgb.wav", ["--fgb-only", "--fgb-fm"], true],
-    ["fgb.wav", ["--fgb-only", "--fgb-fm", "--fgb-fm-squelch-db", "60"], false],
     ["fgb.wav", ["--fgb-only"], false],
     ["sgb.wav", ["--sgb-only", "--fgb-fm"], false],
   ] as const) {
@@ -33,13 +31,6 @@ test("FGB WAV playback emits non-silent FM PCM only when requested", async () =>
       throw error;
     });
     const events = result.stdout.trim().split(/\r?\n/).map(line => nativeEventSchema.parse(JSON.parse(line)));
-    if (sample === "fgb.wav" && options.some(option => option === "--fgb-fm")) {
-      const candidates = events.filter(event => event.type === "acquisition" && event.channels.length)
-        .map(event => JSON.stringify(event));
-      assert.ok(candidates.length > 0);
-      if (expected) candidatesAtDefault = candidates;
-      else assert.deepEqual(candidates, candidatesAtDefault, "The squelch must not change FGB detection");
-    }
     const chunks = events.filter(event => event.type === "fmAudio");
     if (!expected) { assert.equal(chunks.length, 0); continue; }
     const audio = Buffer.concat(chunks.map(chunk => Buffer.from(chunk.pcm, "base64")));
