@@ -1,6 +1,7 @@
 #include "beacon.hpp"
 
 #include <cstdlib>
+#include <array>
 #include <iostream>
 #include <string>
 
@@ -19,9 +20,51 @@ void expect(const std::vector<cospas::cli::BeaconField>& fields, const std::stri
     std::cerr << name << ": expected '" << value << "' got '" << actual << "'\n";
     ++failures;
 }
+
+void set_bits(std::string& hex, int first, int last, unsigned value) {
+    constexpr char digits[] = "0123456789ABCDEF";
+    for (int bit = first; bit <= last; ++bit) {
+        const auto index = std::size_t((bit - 1) / 4);
+        const auto mask = 1u << (3 - (bit - 1) % 4);
+        auto nibble = unsigned(hex[index] <= '9' ? hex[index] - '0' : hex[index] - 'A' + 10);
+        nibble = (value & (1u << (last - bit))) ? nibble | mask : nibble & ~mask;
+        hex[index] = digits[nibble];
+    }
+}
+
+void expect_type(std::string_view hex, unsigned generation, std::string_view expected) {
+    const auto actual = cospas::cli::beacon_type(hex, generation);
+    if (actual == expected) return;
+    std::cerr << "Beacon type: expected '" << expected << "' got '" << actual << "'\n";
+    ++failures;
+}
 }
 
 int main() {
+    constexpr std::array user_types{"ORB", "ELT", "EPIRB", "SRIAL", "NAT", "2G", "EPIRB", "TEST"};
+    constexpr std::array location_types{"Unk.", "Unk.", "EPIRB", "ELT", "ELT", "ELT", "EPIRB", "PLB",
+                                        "ELT", "ELT", "EPIRB", "PLB", "SHIP", "RLS", "TEST", "TEST"};
+    for (unsigned n = 0; n < user_types.size(); ++n) {
+        std::string hex(36, '0');
+        set_bits(hex, 25, 26, 3);
+        set_bits(hex, 37, 39, n);
+        expect_type(hex, 1, user_types[n]);
+    }
+    for (unsigned n = 0; n < location_types.size(); ++n) {
+        std::string hex(36, '0');
+        set_bits(hex, 25, 25, 1);
+        set_bits(hex, 37, 40, n);
+        expect_type(hex, 1, location_types[n]);
+    }
+    std::string short_frame(36, '0');
+    set_bits(short_frame, 37, 40, 8);
+    expect_type(short_frame, 1, "Unk.");
+    constexpr std::array sgb_types{"ELT", "EPIRB", "PLB", "ELT(DT)", "Spare", "Spare", "Spare", "SYSTM"};
+    for (unsigned n = 0; n < sgb_types.size(); ++n) {
+        std::string hex(63, '0');
+        set_bits(hex, 140, 142, n);
+        expect_type(hex, 2, sgb_types[n]);
+    }
     const auto fgb = cospas::cli::describe_beacon("FFFED08E320000002B802C8C053698EC7F97", 1, true);
     expect(fgb, "Frame Mode", "Self-test");
     expect(fgb, "Protocol", "Standard Protocol (2)");
@@ -42,7 +85,7 @@ int main() {
     expect(sgb, "TAC Number", "65535 (0xFFFF)");
     expect(sgb, "Serial Number", "8615 (0x21A7)");
     expect(sgb, "Country", "FRA(227) - France");
-    expect(sgb, "Type", "System Beacon");
+    expect(sgb, "Type", "SYSTM");
     expect(sgb, "Vessel ID", "Reserved Type");
     expect(sgb, "Test Protocol", "Active (Non-operational)");
     expect(sgb, "Position", "43.56049\xC2\xB0N, 1.48080\xC2\xB0" "E");

@@ -176,7 +176,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
       <Text style={styles.legendText}>Active FGB trials · before BCH validation:</Text>
       {channels.length ? channels.map(channel => <View key={channel.channel} style={styles.legendItem}>
         <View style={[styles.dot, { backgroundColor: candidateColors[channel.channel] }]} />
-        <Text style={styles.legendText}>{channel.channel + 1} · {((centerHz + channel.frequencyOffsetHz) / 1e6).toFixed(6)} MHz</Text>
+        <Text style={styles.legendText}>{channel.channel + 1} · {((centerHz + channel.frequencyOffsetHz) / 1e6).toFixed(3)} MHz</Text>
       </View>) : <Text style={styles.legendText}>none</Text>}
     </View></>}
   </View>;

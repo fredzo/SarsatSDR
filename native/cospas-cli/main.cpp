@@ -56,8 +56,9 @@ void write_frame(const cs_frame& frame, const cs_result* result = nullptr, std::
               << ",\"mode\":\"" << (frame.self_test ? "self_test" : "normal") << '"'
               << ",\"headerErrors\":" << frame.header_errors
               << ",\"timeSeconds\":" << frame.time_seconds
-              << ",\"frequencyOffsetHz\":" << frame.frequency_offset_hz
-              << ",\"rawHex\":\"" << frame.raw_hex
+              << ",\"frequencyOffsetHz\":" << frame.frequency_offset_hz << ",\"beaconType\":";
+    write_json_string(cospas::cli::beacon_type(frame.corrected_hex, frame.generation));
+    std::cout << ",\"rawHex\":\"" << frame.raw_hex
               << "\",\"correctedHex\":\"" << frame.corrected_hex
               << "\",\"bch\":[";
     for (std::size_t field = 0; field < frame.bch_count; ++field) {

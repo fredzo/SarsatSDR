@@ -238,7 +238,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
       {channels.length ? channels.map(channel => <span key={channel.channel} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
         data-channel={channel.channel} data-frequency-hz={centerHz + channel.frequencyOffsetHz}>
         <i style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: candidateColors[channel.channel] }} />
-        {channel.channel + 1} · {((centerHz + channel.frequencyOffsetHz) / 1e6).toFixed(6)} MHz
+        {channel.channel + 1} · {((centerHz + channel.frequencyOffsetHz) / 1e6).toFixed(3)} MHz
       </span>) : <span>none</span>}
     </div></>}
   </section>;

@@ -137,6 +137,7 @@ test("Native JSONL supplies real spectra, decoded sample bits and bounded ENG tr
   assert.ok(frames.length > 0 && expected.length > 0);
   assert.deepEqual(frames.map(event => event.frame.correctedHex).sort(), expected.sort());
   for (const { frame } of frames) {
+    assert.equal(frame.beaconType, "SYSTM");
     assert.ok(frame.traces);
     for (const trace of Object.values(frame.traces)) {
       assert.ok(trace.count > 0 && trace.values.length <= 1024);
@@ -168,6 +169,7 @@ test("FGB engineering output is reduced without altering protected bits", async 
   "Marker must disappear when the native trial ends, not remain as frame history");
   const documentation = await readFile(resolve(root, "samples", "fgb.md"), "utf8");
   for (const { frame } of frames) {
+    assert.equal(frame.beaconType, "EPIRB");
     assert.ok(documentation.includes(frame.correctedHex.slice(6)));
     assert.equal(frame.headerErrors, 0);
     assert.ok(frame.fields?.some(field => field.name === "Hex ID"));

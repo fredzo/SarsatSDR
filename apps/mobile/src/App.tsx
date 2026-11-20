@@ -10,14 +10,19 @@ import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileT
   ArrowBigLeft} from "lucide-react-native";
 import { startSchema, playbackConfiguration, type Frame, type Info, type Settings, type SpectrumEvent,
   type Diagnostics, type AcquisitionChannel, type ServerEvent } from "@sarsat/shared/protocol";
-import { beaconPosition, googleMapsUrl, wazeUrl } from "@sarsat/shared/beacon-position";
+import { beaconLocator, beaconPosition, googleMapsUrl, wazeUrl } from "@sarsat/shared/beacon-position";
 import { Spectrum } from "./Spectrum";
 import { BeaconMap } from "./BeaconMap";
 import { createTransport } from "./transport";
+import { fitExtraFields, formatFieldFrequencies, frameSummary } from "./frame-summary";
 import type { Transport } from "./transport-types";
 
 type Entry = { id: number; frame: Frame; received: string; source: string; centerHz: number };
-const frameMhz = (entry: Entry) => ((entry.centerHz + entry.frame.frequencyOffsetHz) / 1e6).toFixed(6);
+const frameMhz = (entry: Entry) => ((entry.centerHz + entry.frame.frequencyOffsetHz) / 1e6).toFixed(3);
+const receivedTime = (received: string) => {
+  const date = new Date(received);
+  return `${date.toLocaleDateString("en-GB")} ${date.toLocaleTimeString("en-GB", { hour12: false })}.${received.slice(20, 23)}`;
+};
 const tabs = ["Detection", "Frames", "Map", "Signal", "Receiver", "Player", "Settings"] as const;
 type Tab = typeof tabs[number];
 const tabIcons: Record<Tab, LucideIcon> = { Detection: RadioTower, Frames: FileText, Map: MapPin,
@@ -86,18 +91,22 @@ function Range({ label, value, min, max, step, onChange, digits = 0, disabled }:
       disabled={disabled} onValueChange={onChange} minimumTrackTintColor="#00ffff" maximumTrackTintColor="#335555" thumbTintColor="#3fe6e6" />
     <Text style={[s.small, s.mono]}>{value.toFixed(digits)}</Text></View>;
 }
-function Badge({ text, tone }: { text: string; tone: "valid" | "invalid" | "corrected" }) {
-  return <Text style={[s.badge, s[tone]]}>{text}</Text>;
+function Badge({ text, tone, accessibilityLabel }: { text: string; tone: "valid" | "invalid" | "corrected"; accessibilityLabel?: string }) {
+  return <Text accessibilityLabel={accessibilityLabel} style={[s.badge, s[tone]]}>{text}</Text>;
 }
-function bchBadges(frame: Frame) {
-  return frame.bch.map((bch, n) => {
+function bchStatus(frame: Frame, n: number, compact = false) {
+    const bch = frame.bch[n];
     const name = frame.generation === 2 ? "BCH" : `BCH${n + 1}`;
     const overLimit = n === 0 && frame.correctionLimit !== undefined &&
       bch.correctedErrors !== null && bch.correctedErrors > frame.correctionLimit;
     const text = !bch.valid ? "FAIL" : overLimit ? `OVER LIMIT · ${bch.correctedErrors} bits`
       : bch.correctedErrors ? `corrected ${bch.correctedErrors} bit${bch.correctedErrors > 1 ? "s" : ""}` : "OK";
-    return <Badge key={n} text={`${name} ${text}`} tone={bch.valid && !overLimit ? bch.correctedErrors ? "corrected" : "valid" : "invalid"} />;
-  });
+    const short = !bch.valid ? "FAIL" : overLimit ? ">LIMIT" : bch.correctedErrors ? `corr. ${bch.correctedErrors}` : "OK";
+    const tone = bch.valid && !overLimit ? bch.correctedErrors ? "corrected" : "valid" : "invalid";
+    return { text: `${name} ${compact ? short : text}`, accessibilityLabel: `${name} ${text}`, tone } as const;
+}
+function bchBadges(frame: Frame, compact = false) {
+  return frame.bch.map((_, n) => <Badge key={n} {...bchStatus(frame, n, compact)} />);
 }
 function headerBadge(frame: Frame) {
   return frame.generation === 1 && frame.headerErrors ?
@@ -118,7 +127,7 @@ function Trace({ title, trace }: { title: string; trace: NonNullable<Frame["trac
 }
 function Signal({ entry }: { entry: Entry | undefined }) {
     return <View style={s.panel}>
-      <Text style={s.h2}>Signal <Text style={s.h2Small}>Selected frame · latest received by default</Text></Text>
+      <Text style={s.h2}>Signal <Text style={s.h2Small}>Current frame · latest received by default</Text></Text>
       {!entry ? <Text style={[s.empty, { paddingVertical: 80 }]}>No frames received.</Text> : <>
         <Text style={s.detail}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.source} · Received: {entry.received}</Text>
         <Text selectable style={[s.mono, s.code]}>{entry.frame.correctedHex}</Text>
@@ -135,6 +144,7 @@ const FrameTable = memo(function FrameTable({ entries, active, select, compact =
   const rows = useRef<ComponentRef<typeof ScrollView>>(null);
   const layouts = useRef(new Map<number, { y: number; height: number }>());
   const viewport = useRef({ y: 0, height: 0 });
+  const [glyphWidth, setGlyphWidth] = useState(7);
   const revealSelection = () => {
     const layout = active && layouts.current.get(active.id);
     if (!layout || !viewport.current.height) return;
@@ -149,21 +159,33 @@ const FrameTable = memo(function FrameTable({ entries, active, select, compact =
     for (const id of layouts.current.keys()) if (!ids.has(id)) layouts.current.delete(id);
     revealSelection();
   }, [active?.id, entries]);
-  const headers = compact ? ["Received (local)", "Gen.", "MHz", "BCH"] :
-    ["Received (local)", "Source", "Gen.", "Mode", "Frequency · MHz", "Δf · Hz", "BCH", "Corrected frame"];
-  const widths = compact ? [118, 45, 93, 150] : columns;
+  const headers = ["Received", "Gen.", "Type", "Mode", "MHz", "Locator", "BCH"];
+  const tableRows = entries.map(entry => {
+    const locator = beaconLocator(entry.frame)?.slice(0, 8) ?? "—";
+    const mode = entry.frame.mode === "self_test" ? "TEST" : "NORMAL";
+    const values = ["00:00:00.000", entry.frame.generation === 1 ? "FGB" : "SGB", entry.frame.beaconType, mode, frameMhz(entry), locator];
+    if (!compact && entry.frame.headerErrors) values[3] = `HEADER ${entry.frame.headerErrors} bits mismatch`;
+    return { entry, locator, mode, values, bch: entry.frame.bch.map((_, n) => bchStatus(entry.frame, n, true).text) };
+  });
+  const widths = headers.map((header, n) => {
+    const values = n === headers.length - 1 ? tableRows.flatMap(row => row.bch) : tableRows.map(row => row.values[n]);
+    const badgePadding = n === headers.length - 1 || (!compact && n === 3 && entries.some(entry => entry.frame.headerErrors)) ? 12 : 0;
+    return Math.ceil(Math.max(header.length, ...values.map(value => value.length)) * glyphWidth + 18 + badgePadding);
+  });
   return <View style={s.fill} accessibilityLabel="Received frames">
+    <Text aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+      style={s.tableMeasure} onLayout={event => setGlyphWidth(event.nativeEvent.layout.width / 10)}>0000000000</Text>
     {!entries.length ? <View style={s.emptyPane}><Text style={s.emptyStrong}>No frames received</Text>
       <Text style={s.empty}>Start the receiver or play an I/Q capture.</Text></View> :
       <ScrollView horizontal style={s.fill} contentContainerStyle={{ minWidth: "100%" }}>
         <View style={{ minWidth: "100%", flex: 1 }}>
           <View style={[s.tr, s.th]}>{headers.map((name, n) =>
-            <Text key={name} style={[s.thText, { width: widths[n] }]}>{name}</Text>)}</View>
+            <Text key={name} style={[s.thText, s.mono, { width: widths[n] }]}>{name}</Text>)}</View>
           <ScrollView ref={rows} style={s.fill} nestedScrollEnabled accessibilityLabel="Frame rows"
             onScroll={event => { viewport.current.y = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={16}
             onLayout={event => { viewport.current.height = event.nativeEvent.layout.height; revealSelection(); }}
             onContentSizeChange={revealSelection}>
-            {[...entries].reverse().map(entry => <Pressable key={entry.id} accessibilityRole="button"
+            {[...tableRows].reverse().map(({ entry, locator, mode }) => <Pressable key={entry.id} accessibilityRole="button"
               accessibilityLabel={`Select frame ${entries.indexOf(entry) + 1}`}
               accessibilityState={{ selected: active?.id === entry.id }} onPress={() => select(entry.id)}
               onLayout={event => {
@@ -175,73 +197,114 @@ const FrameTable = memo(function FrameTable({ entries, active, select, compact =
                 {new Date(entry.received).toLocaleDateString("en-GB")}{"\n"}
                 {new Date(entry.received).toLocaleTimeString("en-GB", { hour12: false })}.{entry.received.slice(20, 23)}
               </Text>
-              {!compact && <Text style={[s.td, { width: columns[1] }]} numberOfLines={1}>{entry.source}</Text>}
-              <Text style={[s.td, { width: compact ? widths[1] : columns[2] }]}>{entry.frame.generation === 1 ? "FGB" : "SGB"}</Text>
-              {!compact && <View style={[s.cell, { width: columns[3] }]}><Text style={s.td}>{entry.frame.mode === "self_test" ? "SELF TEST" : "NORMAL"}</Text>{headerBadge(entry.frame)}</View>}
-              <Text style={[s.td, s.mono, { width: compact ? widths[2] : columns[4] }]}>{frameMhz(entry)}</Text>
-              {!compact && <Text style={[s.td, s.mono, { width: columns[5] }]}>{entry.frame.frequencyOffsetHz.toFixed(1)}</Text>}
-              <View style={[s.cell, { width: compact ? widths[3] : columns[6] }]}><Badges>{bchBadges(entry.frame)}</Badges></View>
-              {!compact && <Text style={[s.td, s.mono, { width: columns[7] }]}>{entry.frame.correctedHex}</Text>}
+              <Text style={[s.td, s.mono, { width: widths[1] }]}>{entry.frame.generation === 1 ? "FGB" : "SGB"}</Text>
+              <Text style={[s.td, s.mono, { width: widths[2] }]}>{entry.frame.beaconType}</Text>
+              <View style={[s.tableBadges, { width: widths[3], paddingHorizontal: 9 }]}>
+                <Text style={[s.td, s.mono, { paddingHorizontal: 0 }]}>{mode}</Text>{!compact && headerBadge(entry.frame)}</View>
+              <Text style={[s.td, s.mono, { width: widths[4] }]}>{frameMhz(entry)}</Text>
+              <Text style={[s.td, s.mono, { width: widths[5] }]}>{locator}</Text>
+              <View style={[s.tableBadges, { width: widths[6] }]}>{bchBadges(entry.frame, true)}</View>
             </Pressable>)}
           </ScrollView>
         </View>
       </ScrollView>}
   </View>;
 });
-const FrameDetail = memo(function FrameDetail({ entry, compact = false }: { entry: Entry | undefined; compact?: boolean }) {
+function CompactFrameDetails({ entry }: { entry: Entry }) {
+  const summary = frameSummary(entry.frame);
   const [height, setHeight] = useState(0);
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const fieldBudget = Math.max(0, Math.floor((height - headerHeight - 68) / 36));
+  const [baseHeights, setBaseHeights] = useState<[number, number]>([0, 0]);
+  const [fieldHeights, setFieldHeights] = useState<(number | undefined)[]>([]);
+  const columns = fitExtraFields(summary.extraFields.map((_, n) => fieldHeights[n]),
+    [Math.max(0, height - baseHeights[0]), Math.max(0, height - baseHeights[1])], 3);
+  const extra = (index: number) => {
+    const field = summary.extraFields[index];
+    return <Text style={s.summaryLine}><Text style={s.summaryLabel}>{field.name}: </Text>{formatFieldFrequencies(field.value)}</Text>;
+  };
+  const recordBase = (column: 0 | 1, value: number) => setBaseHeights(previous =>
+    previous[column] === value ? previous : column === 0 ? [value, previous[1]] : [previous[0], value]);
+  return <View style={s.summaryColumns} onLayout={event => setHeight(event.nativeEvent.layout.height)}>
+    <View style={s.summaryColumn}>
+      <View style={s.summaryBase} onLayout={event => recordBase(0, event.nativeEvent.layout.height)}>
+        <Text style={s.summaryLine}><Text style={s.summaryLabel}>Info: </Text>{formatFieldFrequencies(summary.info[0] ?? "Not available")}</Text>
+        {summary.info.slice(1).map((value, n) => <Text key={n} style={s.summaryLine}>{formatFieldFrequencies(value)}</Text>)}
+        <Text style={s.summaryLine}><Text style={s.summaryLabel}>Location: </Text>{summary.position?.locator ?? summary.positionStatus ?? "Not available"}</Text>
+        <Text style={s.summaryLine}>{summary.country ?? "Country not available"}</Text>
+        {summary.position && <>
+          <Text style={s.summaryLine}>{summary.position.dms}</Text>
+          <Text style={s.summaryLine}>{summary.position.decimal}</Text>
+        </>}
+        {!!summary.emergency.length && <Text style={s.summaryLine}><Text style={[s.summaryLabel, s.emergencyLabel]}>Emergency: </Text>{formatFieldFrequencies(summary.emergency.join(" · "))}</Text>}
+      </View>
+      {columns[0].map(index => <View key={index}>{extra(index)}</View>)}
+      <View style={s.summaryMeasure} pointerEvents="none" aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        {summary.extraFields.map((_, index) => <View key={index} onLayout={event => {
+          const value = event.nativeEvent.layout.height;
+          setFieldHeights(previous => {
+            if (previous[index] === value) return previous;
+            const next = [...previous]; next[index] = value; return next;
+          });
+        }}>{extra(index)}</View>)}
+      </View>
+    </View>
+    <View style={s.summaryColumn}>
+      <View style={s.summaryBase} onLayout={event => recordBase(1, event.nativeEvent.layout.height)}>
+        <View style={s.summaryControl}><Text style={s.summaryLabel}>Control:</Text>{bchBadges(entry.frame, true)}{headerBadge(entry.frame)}</View>
+        <Text style={s.summaryLine}><Text style={s.summaryLabel}>Hex ID: </Text>{summary.hexId ?? "Not available"}</Text>
+        {summary.serial && <Text style={s.summaryLine}><Text style={s.summaryLabel}>Serial#: </Text>{summary.serial}</Text>}
+        <Text style={s.summaryLine}><Text style={s.summaryLabel}>Main location device: </Text>{formatFieldFrequencies(summary.mainDevice ?? "Not available")}</Text>
+        <Text style={s.summaryLine}><Text style={s.summaryLabel}>Aux. location device: </Text>{formatFieldFrequencies(summary.auxDevice ?? "Not available")}</Text>
+        {summary.homingDevice && <Text style={s.summaryLine}><Text style={s.summaryLabel}>Homing device: </Text>{summary.homingDevice}</Text>}
+      </View>
+      {columns[1].map(index => <View key={index}>{extra(index)}</View>)}
+    </View>
+  </View>;
+}
+const FrameDetail = memo(function FrameDetail({ entry, compact = false }: { entry: Entry | undefined; compact?: boolean }) {
   const fields = entry?.frame.fields ?? [];
-  const priority = ["Hex ID", "Country", "Protocol", "Beacon Type", "Serial Number", "Latitude", "Longitude", "Emergency"];
-  const essential = [...fields].sort((a, b) => {
-    const rank = (name: string) => priority.includes(name) ? priority.indexOf(name) : priority.length;
-    return rank(a.name) - rank(b.name);
-  }).slice(0, fieldBudget);
   const sections = [...new Set(fields.map(field => field.section))];
   const content = <>
-    {!entry ? <><Text style={s.h3}>SELECTED FRAME</Text><Text style={s.empty}>No frame selected.</Text></> : <>
-      <View onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
-      <Text style={s.h3}>SELECTED FRAME</Text>
-      <View style={!compact && s.metadataGrid}>
-        <View style={!compact && s.metadataColumn}>
-          <Text style={s.detail}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.frame.mode === "self_test" ? "SELF TEST" : "NORMAL"}</Text>
-          <Text style={s.detail} numberOfLines={compact ? 1 : undefined}>{entry.source}</Text>
-          <Text style={[s.detail, s.mono]}>{frameMhz(entry)} MHz · {entry.frame.timeSeconds.toFixed(compact ? 3 : 6)} s</Text>
+    {!entry ? <><Text style={s.h3}>CURRENT FRAME</Text><Text style={s.empty}>No frame selected.</Text></> : <>
+      <View style={s.frameHeader}>
+        <Text style={[s.h3, s.frameHeaderTitle]}>CURRENT FRAME</Text>
+        <Text style={[s.frameHeaderTime, s.mono]}>{receivedTime(entry.received)} · {frameMhz(entry)} MHz</Text>
+        <Text style={s.frameHeaderMode}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.frame.mode === "self_test" ? "SELF TEST" : "NORMAL"}</Text>
+      </View>
+      {compact ? <CompactFrameDetails key={entry.id} entry={entry} /> : <>
+      <View style={s.metadataGrid}>
+        <View style={s.metadataColumn}>
+          <Text style={s.detail}>{entry.source}</Text>
+          <Text style={[s.detail, s.mono]}>{frameMhz(entry)} MHz · {entry.frame.timeSeconds.toFixed(6)} s</Text>
         </View>
-        {!compact && <View style={s.metadataColumn}>
+        <View style={s.metadataColumn}>
           <Text style={s.detail}>Received: {entry.received}{"\n"}Δf: {entry.frame.frequencyOffsetHz.toFixed(3)} Hz</Text>
           {entry.frame.correctionLimit !== undefined && <Text style={s.detail}>{entry.frame.generation === 1 ? "BCH-1" : "BCH"} correction limit: {entry.frame.correctionLimit}
             {entry.frame.bch.length > 1 && entry.frame.bch2Limit !== undefined ? ` · BCH-2: ${entry.frame.bch2Limit}` : ""}</Text>}
           {entry.frame.headerErrors !== undefined && <Text style={s.detail}>Header errors: {entry.frame.headerErrors}</Text>}
-        </View>}
+        </View>
       </View>
       <Badges>{bchBadges(entry.frame)}{headerBadge(entry.frame)}</Badges>
-      {!compact && <>
-        <Text style={s.detail}>Raw</Text><Text selectable style={[s.mono, s.code]}>{entry.frame.rawHex}</Text>
-      </>}
+      <Text style={s.detail}>Raw</Text><Text selectable style={[s.mono, s.code]}>{entry.frame.rawHex}</Text>
       <Text style={s.detail}>Corrected</Text><Text selectable style={[s.mono, s.code]}>{entry.frame.correctedHex}</Text>
-      </View>
-      {compact ? <View style={{ marginTop: 8 }}>{essential.map((field, n) => <View key={n} style={s.fieldRow}>
-        <Text style={s.fieldName} numberOfLines={1}>{field.name}</Text>
-        <Text style={s.fieldValue} numberOfLines={2}>{field.value}</Text>
-      </View>)}</View> : <View style={s.fieldSections}>
+      <View style={s.fieldSections}>
         {sections.map(section => <View key={section} style={s.fieldSection}>
-          <Text style={s.fieldSectionTitle}>{section}</Text>
+          <Text style={[s.fieldSectionTitle, section === "Emergency" && s.emergencyLabel]}>{section}</Text>
           {fields.filter(field => field.section === section).map((field, n) =>
             <View key={n} style={s.fullFieldRow}>
-              <Text selectable style={s.fieldName}>{field.name}</Text>
-              <Text selectable style={s.fieldValue}>{field.value}</Text>
+              <Text selectable style={[s.fieldName, section === "Emergency" && s.emergencyLabel]}>{field.name}</Text>
+              <Text selectable style={s.fieldValue}>{formatFieldFrequencies(field.value)}</Text>
             </View>)}
+          {(section === "Location" || section === "Encoded GNSS Location") && beaconLocator(entry.frame) &&
+            <View style={s.fullFieldRow}><Text style={s.fieldName}>Locator</Text>
+              <Text selectable style={s.fieldValue}>{beaconLocator(entry.frame)}</Text></View>}
         </View>)}
-      </View>}
-      {compact && fields.length > essential.length && <Text style={s.p}>Essential fields shown to fit this panel.</Text>}
+      </View>
+      </>}
     </>}
   </>;
-  return compact ? <View style={s.detailPane} accessibilityLabel="Selected frame details"
-    onLayout={event => setHeight(event.nativeEvent.layout.height)}>{content}</View> :
+  return compact ? <View style={s.detailPane} accessibilityLabel="Current frame details">{content}</View> :
     <ScrollView key={entry?.id} style={s.fill} contentContainerStyle={s.fullDetail}
-      accessibilityLabel="Selected frame details" nestedScrollEnabled>{content}</ScrollView>;
+      accessibilityLabel="Current frame details" nestedScrollEnabled>{content}</ScrollView>;
 });
 const MapPanel = memo(function MapPanel({ entry, compact = false }: { entry: Entry | undefined; compact?: boolean }) {
   const position = entry && beaconPosition(entry.frame);
@@ -441,7 +504,7 @@ export default function App() {
 
   return <View style={s.main}>
     <View style={s.titlebar}><View style={s.brand}><RadioTower size={28} color="#3fe6e6" /><Text style={s.brandStrong}>SarsatSDR</Text>
-      <Text style={s.brandSpan}>COSPAS-SARSAT · 406 MHz · FGB / SGB</Text></View>
+      <Text style={s.brandSpan}>COSPAS-SARSAT · 406.000 MHz · FGB / SGB</Text></View>
       <View style={s.row}>
         <View style={s.row}><Led tone={connected ? "green" : undefined} /><Text style={s.connection}>
           {connected ? Platform.OS === "web" ? "CONNECTED" : "ONLINE" : "OFFLINE"} · RTL-SDR</Text></View>
@@ -559,7 +622,7 @@ export default function App() {
           <Button icon={Usb} title="REFRESH USB" disabled={busy} onPress={() => { void refresh().catch(reason => setError(String(reason))); }} />
           <Button icon={RefreshCw} title="NATIVE DEFAULTS" disabled={busy || !info} onPress={() => info && setSettings(info.settings)} /></View>
         <Text style={s.p}>DSP defaults are read from the C API. Initial gain preset: 8.
-          Search Depth: ±{((settings?.searchDepth ?? 9) * 1.2 / 9).toFixed(1)} kHz.
+          Search Depth: ±{((settings?.searchDepth ?? 9) * 1.2 / 9).toFixed(3)} kHz.
           Settings apply to RTL-SDR reception and manual WAV playback; validated capture profiles are independent.
           Stop the session before changing DSP settings. Settings are not saved yet.</Text>
         <Text style={s.p}>RTL calibration adds an offset to FFT and Full BW without changing decoding.
@@ -594,7 +657,6 @@ export default function App() {
   </View>;
 }
 
-const columns = [118, 140, 50, 170, 120, 80, 260, 300];
 const mono = Platform.select({ web: "Consolas,monospace", default: "monospace" });
 const s = StyleSheet.create({
   main: { flex: 1, backgroundColor: "#001000" },
@@ -614,6 +676,18 @@ const s = StyleSheet.create({
   fixedPage: { flex: 1, minHeight: 0, padding: 8 },
   detailPane: { flex: 1, minHeight: 0, padding: 10, backgroundColor: "#001a1a", overflow: "hidden" },
   fullDetail: { padding: 10, backgroundColor: "#001a1a" },
+  frameHeader: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  frameHeaderTitle: { flex: 1, marginBottom: 0 },
+  frameHeaderTime: { flex: 1.4, textAlign: "center", fontSize: 10, color: "#ffffff" },
+  frameHeaderMode: { flex: 1, textAlign: "right", fontSize: 10, color: "#ffffff" },
+  summaryColumns: { flex: 1, minHeight: 0, flexDirection: "row", gap: 12 },
+  summaryColumn: { flex: 1, minWidth: 0, gap: 3 },
+  summaryBase: { gap: 3 },
+  summaryControl: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 4 },
+  summaryMeasure: { position: "absolute", left: 0, right: 0, top: 0, opacity: 0 },
+  summaryLine: { fontSize: 11, lineHeight: 15, color: "#ffffff" },
+  summaryLabel: { fontSize: 11, color: "#00ffff", fontWeight: "bold" },
+  emergencyLabel: { color: "#ff4444" },
   metadataGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   metadataColumn: { flexBasis: 250, flexGrow: 1, minWidth: 0 },
   fieldSections: { flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start", gap: 10, marginTop: 12 },
@@ -675,6 +749,8 @@ const s = StyleSheet.create({
   th: { backgroundColor: "#003333", borderBottomColor: "#335555" },
   thText: { color: "#99baba", fontSize: 11, paddingVertical: 11, paddingHorizontal: 9 },
   td: { fontSize: 11, paddingVertical: 10, paddingHorizontal: 9, color: "#ffffff" },
+  tableMeasure: { position: "absolute", opacity: 0, fontFamily: mono, fontSize: 11 },
+  tableBadges: { alignItems: "flex-start", gap: 2, paddingHorizontal: 9 },
   cell: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", paddingHorizontal: 4 },
   link: { color: "#00ffff", textDecorationLine: "underline" },
   mono: { fontFamily: mono },
@@ -685,7 +761,6 @@ const s = StyleSheet.create({
   corrected: { color: "#ffdd66", backgroundColor: "#332600", borderColor: "#998500" },
   detail: { fontSize: 11, color: "#99baba", marginTop: 4 },
   code: { fontSize: 12, color: "#ffffff" },
-  fieldRow: { height: 36, flexDirection: "row", gap: 10, alignItems: "center", paddingVertical: 2, borderBottomWidth: 1, borderBottomColor: "#003333" },
   fieldName: { flexBasis: "45%", color: "#99baba", fontSize: 12 },
   fieldValue: { flex: 1, fontSize: 12, color: "#ffffff" },
   trace: { backgroundColor: "#001000", borderWidth: 1, borderColor: "#335555", marginVertical: 15 },

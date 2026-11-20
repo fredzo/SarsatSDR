@@ -3,7 +3,11 @@
   "version": "0.1.0",
   "description": "SarsatSDR - reception RTL-SDR et decodage natif des balises COSPAS-SARSAT 406 MHz FGB/SGB",
   "type": "commonjs",
-  "workspaces": ["apps/diagnostic-web", "apps/mobile", "packages/shared"],
+  "workspaces": [
+    "apps/diagnostic-web",
+    "apps/mobile",
+    "packages/shared"
+  ],
   "bin": {
     "sarsat-decode": "dist/cli.js"
   },
@@ -28,5 +32,10 @@
   "allowScripts": {
     "esbuild@0.28.2": true,
     "esbuild@0.21.5": true
+  },
+  "dependencies": {
+    "expo": "~58.0.25",
+    "react": "19.3.0",
+    "react-native": "0.88.1"
   }
 }

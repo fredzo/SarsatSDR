@@ -98,42 +98,46 @@ struct Protocol {
     Kind kind;
     const char* description;
     const char* title;
+    const char* type;
 };
 
 Protocol fgb_protocol(bool long_frame, bool user, unsigned code) {
     if (!long_frame || user) {
         constexpr std::array<Protocol, 8> table{{
-            {Kind::user, "Orbitography Protocol", "Orbitography 406"},
-            {Kind::user, "ELT - Aviation", nullptr},
-            {Kind::user, "EPIRB - Maritime", nullptr},
-            {Kind::user, "Serial User Protocol", "Serial 406"},
-            {Kind::user, "National User Protocol", "National 406"},
-            {Kind::user, "2nd Generation Beacons", nullptr},
-            {Kind::user, "EPIRB - Radio Call Sign", nullptr},
-            {Kind::user, "Test User Protocol", "User Test 406"},
+            {Kind::user, "Orbitography Protocol", "Orbitography 406", "ORB"},
+            {Kind::user, "ELT - Aviation", nullptr, "ELT"},
+            {Kind::user, "EPIRB - Maritime", nullptr, "EPIRB"},
+            {Kind::user, "Serial User Protocol", "Serial 406", "SRIAL"},
+            {Kind::user, "National User Protocol", "National 406", "NAT"},
+            {Kind::user, "2nd Generation Beacons", nullptr, "2G"},
+            {Kind::user, "EPIRB - Radio Call Sign", nullptr, "EPIRB"},
+            {Kind::user, "Test User Protocol", "User Test 406", "TEST"},
         }};
         return table[code & 7];
     }
     constexpr std::array<Protocol, 16> table{{
-        {Kind::spare, "Spare", "Spare 406"},
-        {Kind::spare, "Spare", "Spare 406"},
-        {Kind::standard, "EPIRB - MMSI / Location", nullptr},
-        {Kind::standard, "ELT-24-bit Address / Location", nullptr},
-        {Kind::standard, "ELT Serial Location", nullptr},
-        {Kind::standard, "ELT Serial Aircraft Location", nullptr},
-        {Kind::standard, "EPIRB Serial Location", nullptr},
-        {Kind::standard, "PLB Serial Location", nullptr},
-        {Kind::national, "ELT National Location", nullptr},
-        {Kind::elt_dt, "ELT(DT) Location Protocol", nullptr},
-        {Kind::national, "EPIRB National Location", nullptr},
-        {Kind::national, "PLB National Location", nullptr},
-        {Kind::standard, "Ship Security Location", nullptr},
-        {Kind::rls, "RLS Location Protocol", nullptr},
-        {Kind::standard, "Test Standard Location", "Test Std. 406"},
-        {Kind::national, "Test National Location", "Test Nat. 406"},
+        {Kind::spare, "Spare", "Spare 406", "Unk."},
+        {Kind::spare, "Spare", "Spare 406", "Unk."},
+        {Kind::standard, "EPIRB - MMSI / Location", nullptr, "EPIRB"},
+        {Kind::standard, "ELT-24-bit Address / Location", nullptr, "ELT"},
+        {Kind::standard, "ELT Serial Location", nullptr, "ELT"},
+        {Kind::standard, "ELT Serial Aircraft Location", nullptr, "ELT"},
+        {Kind::standard, "EPIRB Serial Location", nullptr, "EPIRB"},
+        {Kind::standard, "PLB Serial Location", nullptr, "PLB"},
+        {Kind::national, "ELT National Location", nullptr, "ELT"},
+        {Kind::elt_dt, "ELT(DT) Location Protocol", nullptr, "ELT"},
+        {Kind::national, "EPIRB National Location", nullptr, "EPIRB"},
+        {Kind::national, "PLB National Location", nullptr, "PLB"},
+        {Kind::standard, "Ship Security Location", nullptr, "SHIP"},
+        {Kind::rls, "RLS Location Protocol", nullptr, "RLS"},
+        {Kind::standard, "Test Standard Location", "Test Std. 406", "TEST"},
+        {Kind::national, "Test National Location", "Test Nat. 406", "TEST"},
     }};
     return table[code & 15];
 }
+
+constexpr std::array<const char*, 8> sgb_beacon_types{"ELT", "EPIRB", "PLB", "ELT(DT)", "Spare", "Spare", "Spare",
+                                                       "SYSTM"};
 
 const char* protocol_name(Kind kind, bool long_frame) {
     switch (kind) {
@@ -362,9 +366,7 @@ std::vector<BeaconField> describe_sgb(std::string_view hex, bool self_test) {
     add("Identification", "Serial Number", format("%llu (0x%04llX)", static_cast<unsigned long long>(number),
                                                    static_cast<unsigned long long>(number)));
     add("Identification", "Country", country(unsigned(country_code)));
-    constexpr std::array<const char*, 8> beacon_types{"ELT", "EPIRB", "PLB", "ELT(DT)", "Spare", "Spare", "Spare",
-                                                      "System Beacon"};
-    add("Identification", "Type", beacon_types[beacon_type]);
+    add("Identification", "Type", sgb_beacon_types[beacon_type]);
     switch (vessel_type) {
     case 0b000: add("Identification", "Vessel ID", "None"); break;
     case 0b001: {
@@ -490,6 +492,19 @@ std::vector<BeaconField> describe_sgb(std::string_view hex, bool self_test) {
 
 std::vector<BeaconField> describe_beacon(std::string_view corrected_hex, unsigned generation, bool self_test) {
     return generation == 2 ? describe_sgb(corrected_hex, self_test) : describe_fgb(corrected_hex, self_test);
+}
+
+std::string_view beacon_type(std::string_view corrected_hex, unsigned generation) {
+    if (generation == 2) {
+        const Bits bits(corrected_hex, 2, 250);
+        return sgb_beacon_types[bits(138, 140)];
+    }
+    const Bits bits(corrected_hex, 0, 144);
+    const bool long_frame = bits(25, 25);
+    const bool user = bits(26, 26);
+    const auto code = unsigned(user ? bits(37, 39) : bits(37, 40));
+    if (!long_frame && !user && code > 7) return "Unk.";
+    return fgb_protocol(long_frame, user, code).type;
 }
 
 }
