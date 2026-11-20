@@ -1,14 +1,14 @@
 import { memo, useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
-import { Linking, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
+import { Linking, Modal, PanResponder, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
   type TextStyle, type ViewStyle } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import Slider from "@react-native-community/slider";
 import * as Clipboard from "expo-clipboard";
-import Svg, { Path, Polyline } from "react-native-svg";
+import Svg, { G, Path, Polyline, Text as SvgText } from "react-native-svg";
 import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileSearch, FileText, FlaskConical, FolderOpen, MapPin,
   Navigation, Play, BoomBox, Radio, RadioTower, RefreshCw, Settings as SettingsIcon, Square, Usb, type LucideIcon,
   ArrowBigRight,
-  ArrowBigLeft, Copy, ExternalLink, Share2, X } from "lucide-react-native";
+  ArrowBigLeft, Copy, ExternalLink, Minus, Plus, Share2, X } from "lucide-react-native";
 import { startSchema, playbackConfiguration, type Frame, type Info, type Settings, type SpectrumEvent,
   type Diagnostics, type AcquisitionChannel, type ServerEvent } from "@sarsat/shared/protocol";
 import { beaconLocator, beaconPosition, googleMapsUrl, wazeUrl } from "@sarsat/shared/beacon-position";
@@ -146,29 +146,171 @@ function headerBadge(frame: Frame) {
     <Badge text={`HEADER ${frame.headerErrors} bit${frame.headerErrors > 1 ? "s" : ""} mismatch`} tone="corrected" /> : null;
 }
 const Badges = ({ children }: { children: ReactNode }) => <View style={s.badges}>{children}</View>;
-function Trace({ title, trace }: { title: string; trace: NonNullable<Frame["traces"]>["phase"] | undefined }) {
-  if (!trace?.values.length) return <Text style={[s.empty, { padding: 25 }]}>{title}: no trace received</Text>;
-  const minimum = Math.min(...trace.values), maximum = Math.max(...trace.values);
+type SignalTrace = NonNullable<Frame["traces"]>["phase"];
+type SignalSeries = { trace: SignalTrace; scale: number; offset: number; color: string };
+type SignalBits = { start: number; samplesPerBit: number; hex: string; padding?: number };
+const minBitWidth = 16;
+const TraceContent = memo(function TraceContent({ series, start, end, pixelsPerSample, minimum, maximum, bits }: {
+  series: SignalSeries[]; start: number; end: number; pixelsPerSample: number; minimum: number; maximum: number;
+  bits?: SignalBits;
+}) {
   const span = Math.max(1e-6, maximum - minimum);
-  const points = trace.values.map((value, n) =>
-    `${n / Math.max(1, trace.values.length - 1) * 900},${130 - (value - minimum) / span * 115}`).join(" ");
+  const x = (sample: number) => sample * pixelsPerSample;
+  const y = (value: number) => 130 - (value - minimum) / span * 115;
+  const samplesPerBit = bits?.samplesPerBit ?? 0;
+  const bitWidth = samplesPerBit * pixelsPerSample;
+  const labels = bits ? [...bits.hex].flatMap((hex, n) => {
+    const skip = n === 0 ? bits.padding ?? 0 : 0;
+    const sample = bits.start + Math.max(0, n * 4 - (bits.padding ?? 0)) * samplesPerBit;
+    const count = 4 - skip;
+    return sample + count * samplesPerBit > start && sample < end ? [{ hex, sample, skip, count }] : [];
+  }) : [];
+  const mid = y(minimum <= 0 && maximum >= 0 ? 0 : (minimum + maximum) / 2);
+  return <>
+      <Path d={`M${x(start)} ${mid} H${x(end)}`} stroke="#003333" />
+      {series.map(({ trace, scale, offset, color }, n) => {
+        const step = trace.stride * scale;
+        const from = Math.max(0, Math.floor((start - offset) / step));
+        const to = Math.ceil((end - offset) / step) + 1;
+        const points = trace.values.slice(from, to).map((value, i) =>
+          `${x(offset + (from + i) * step).toFixed(2)},${y(value).toFixed(2)}`).join(" ");
+        return points ? <Polyline key={n} points={points} fill="none" stroke={color} strokeWidth={1} /> : null;
+      })}
+      {labels.map(({ hex, sample, skip, count }) => {
+        const left = x(sample), right = left + bitWidth * count, middle = (left + right) / 2;
+        return <G key={sample}>
+          {Array.from({ length: count }, (_, n) => {
+            const center = left + (n + .5) * bitWidth;
+            return <SvgText key={n} x={center} y={153} textAnchor="middle" fill="#c6dddd" fontSize={12}>
+              {(parseInt(hex, 16) >> (3 - skip - n)) & 1}
+            </SvgText>;
+          })}
+          <Path d={`M${left + 1} 159 H${right - 1}`} stroke="#335555" />
+          <SvgText x={middle} y={175} textAnchor="middle" fill="#00ffff" fontSize={12}>{hex}</SvgText>
+        </G>;
+      })}
+  </>;
+});
+function Trace({ title, series, start, spanSamples, width, rate, bits }: {
+  title: string; series: SignalSeries[]; start: number; spanSamples: number; width: number; rate: number; bits?: SignalBits;
+}) {
+  const levels = useMemo(() => {
+    const values = series.flatMap(({ trace }) => trace.values);
+    return values.length ? { minimum: Math.min(...values), maximum: Math.max(...values) } : null;
+  }, [series]);
+  if (!levels) return <Text style={[s.empty, { padding: 25 }]}>{title}: no trace received</Text>;
+  const pixelsPerSample = width / spanSamples;
+  const left = start * pixelsPerSample;
+  const showBits = bits && bits.samplesPerBit * pixelsPerSample >= minBitWidth - 1e-6;
+  const height = showBits ? 195 : 158;
+  // Cache geometry for a window with half a viewport of overscan on either side.
+  const tile = Math.floor(start / (spanSamples / 2)) * (spanSamples / 2);
+  const timeLabels = [0, .25, .5, .75, 1];
   return <View style={s.trace}><View style={s.traceHeader}><Text style={s.traceText}>{title}</Text>
-    <Text style={[s.traceText, { fontSize: 10 }]}>{trace.count} native points · display stride {trace.stride}</Text></View>
-    <Svg width="100%" height={145} viewBox="0 0 900 145" preserveAspectRatio="none" accessibilityLabel={title}>
-      <Path d="M0 72 H900 M450 0 V145" stroke="#003333" /><Polyline points={points} fill="none" stroke="#99ec80" strokeWidth={1} />
-    </Svg><Text style={[s.traceText, s.mono, { padding: 5, paddingHorizontal: 12, fontSize: 10 }]}>{minimum.toPrecision(4)} … {maximum.toPrecision(4)}</Text></View>;
+    <Text style={[s.traceText, { fontSize: 10 }]}>{levels.minimum.toPrecision(4)} … {levels.maximum.toPrecision(4)}</Text></View>
+    <Svg width="100%" height={height} viewBox={`${left} 0 ${width} ${height}`} accessibilityLabel={title}>
+      {timeLabels.map(f => <Path key={f} d={`M${left + width * f} 0 V140`} stroke="#003333" />)}
+      <TraceContent series={series} start={Math.max(0, tile - spanSamples / 2)} end={tile + spanSamples * 1.5}
+        pixelsPerSample={pixelsPerSample} {...levels} bits={showBits ? bits : undefined} />
+      {timeLabels.map(f => <SvgText key={f} x={left + (f === 0 ? 3 : f === 1 ? width - 3 : width * f)}
+        y={showBits ? 191 : 154} textAnchor={f === 0 ? "start" : f === 1 ? "end" : "middle"}
+        fill="#99baba" fontSize={10}>{((start + spanSamples * f) * 1000 / rate).toFixed(1)} ms</SvgText>)}
+    </Svg></View>;
+}
+const maxSignalZoom = 32;
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+type SignalWindow = { zoom: number; start: number };
+function SignalPlots({ frame, children }: { frame: Frame; children: ReactNode }) {
+  const [manualWindow, setWindow] = useState<SignalWindow | null>(null);
+  const current = useRef<SignalWindow | null>(null);
+  const animation = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(animation.current), []);
+  const [width, setWidth] = useState(0);
+  const { traces } = frame;
+  const fgb = frame.generation === 1;
+  // SGB: four PLL updates per I/Q symbol; place each recovered value at its interval's center.
+  const duration = traces ? Math.max(traces.phase.count, fgb ? 0 : 4 * Math.max(traces.i.count, traces.q.count)) : 0;
+  const bits = useMemo<SignalBits | undefined>(() => {
+    if (frame.generation === 1) return frame.fgbBitStartSample === undefined ? undefined :
+      { start: frame.fgbBitStartSample, samplesPerBit: 18, hex: frame.rawHex };
+    // The first hex digit includes two non-transmitted bits (one marks self-test).
+    return { start: 100, samplesPerBit: 2, padding: 2, hex: (parseInt(frame.rawHex[0], 16) & 3).toString(16) + frame.rawHex.slice(1) };
+  }, [frame]);
+  const phaseSeries = useMemo<SignalSeries[]>(() => traces ? [{ trace: traces.phase, scale: 1, offset: .5, color: "#99ec80" }] : [], [traces]);
+  const iqSeries = useMemo<SignalSeries[]>(() => traces ? [
+    { trace: traces.i, scale: 4, offset: 2, color: "#99ec80" },
+    { trace: traces.q, scale: 4, offset: 2, color: "#ff6060" },
+  ] : [], [traces]);
+  const initialZoom = bits && width > 0 && duration > 0
+    ? clamp(minBitWidth * duration / (width * bits.samplesPerBit), 1, maxSignalZoom) : 1;
+  const window = manualWindow ?? { zoom: initialZoom, start: clamp(bits?.start ?? 0, 0, duration - duration / initialZoom) };
+  const initial = useRef(window);
+  initial.current = window;
+  const applyZoom = (base: SignalWindow, factor: number, from: number, to: number) => {
+    const zoom = clamp(base.zoom * factor, 1, maxSignalZoom);
+    const span = duration / zoom;
+    const start = clamp(base.start + from * duration / base.zoom - to * span, 0, duration - span);
+    const active = current.current ?? initial.current;
+    if (zoom === active.zoom && start === active.start) return;
+    current.current = { zoom, start };
+    if (!animation.current) animation.current = requestAnimationFrame(() => {
+      animation.current = 0;
+      setWindow(current.current);
+    });
+  };
+  const gestures = useMemo(() => {
+    let origin = 0;
+    let baseline: { window: SignalWindow; count: number; center: number; distance: number } | undefined;
+    return PanResponder.create({
+      onStartShouldSetPanResponder: event => event.nativeEvent.touches.length >= 2,
+      onMoveShouldSetPanResponder: (event, { dx, dy }) => event.nativeEvent.touches.length >= 2 ||
+        ((current.current ?? initial.current).zoom > 1 && Math.abs(dx) > Math.max(4, Math.abs(dy))),
+      onPanResponderGrant: ({ nativeEvent }) => {
+        origin = nativeEvent.pageX - nativeEvent.locationX;
+        baseline = undefined;
+      },
+      onPanResponderMove: ({ nativeEvent: { touches } }) => {
+        const [first, second] = touches;
+        if (!first || width <= 0) return;
+        const count = second ? 2 : 1;
+        const center = ((second ? (first.pageX + second.pageX) / 2 : first.pageX) - origin) / width;
+        const distance = second ? Math.max(1, Math.hypot(first.pageX - second.pageX, first.pageY - second.pageY)) : 1;
+        if (!baseline || baseline.count !== count) baseline = { window: current.current ?? initial.current, count, center, distance };
+        applyZoom(baseline.window, distance / baseline.distance, baseline.center, center);
+      },
+    });
+  }, [duration, width]);
+  const viewport = { start: window.start, spanSamples: duration / window.zoom, width, rate: fgb ? 7200 : 600 };
+  const gestureStyle: ViewStyle & { touchAction?: "pan-y" } = {
+    ...StyleSheet.absoluteFill,
+    ...(Platform.OS === "web" ? { touchAction: "pan-y" } : {}),
+  };
+  const hasTrace = !!traces?.phase.values.length;
+  return <View onLayout={event => setWidth(Math.max(0, event.nativeEvent.layout.width - 2))}>
+    <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 10 }}>
+      <View style={{ flex: 1, minWidth: 0 }}>{children}</View>
+      {hasTrace && <View style={s.row}>
+        <Button iconOnly icon={Minus} title="Zoom out" disabled={window.zoom === 1} onPress={() => applyZoom(current.current ?? window, .5, .5, .5)} />
+        <Button iconOnly icon={Plus} title="Zoom in" disabled={window.zoom === maxSignalZoom} onPress={() => applyZoom(current.current ?? window, 2, .5, .5)} />
+      </View>}
+    </View>
+    {!hasTrace && <Text style={[s.empty, { padding: 25 }]}>No phase trace received.</Text>}
+    {hasTrace && width > 0 && <View>
+      {!fgb && <Trace title="Recovered I (green) / Q (red)" {...viewport} series={iqSeries} bits={bits} />}
+      <Trace title="Recovered phase / PLL error" series={phaseSeries} {...viewport} bits={fgb ? bits : undefined} />
+      <View {...gestures.panHandlers} testID="signal-gesture-surface" style={gestureStyle} />
+    </View>}
+  </View>;
 }
 function Signal({ entry }: { entry: Entry | undefined }) {
     return <View style={s.panel}>
-      <Text style={s.h2}>Signal <Text style={s.h2Small}>Current frame · latest received by default</Text></Text>
-      {!entry ? <Text style={[s.empty, { paddingVertical: 80 }]}>No frames received.</Text> : <>
+      <Text style={[s.h2, { marginBottom: 3 }]}>Signal <Text style={s.h2Small}>Current frame · latest received by default</Text></Text>
+      {!entry ? <Text style={[s.empty, { paddingVertical: 80 }]}>No frames received.</Text> : <SignalPlots key={entry.id} frame={entry.frame}>
         <Text style={s.detail}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.source} · Received: {entry.received}</Text>
         <Text selectable style={[s.mono, s.code]}>{entry.frame.correctedHex}</Text>
         <Text style={s.detail}>{frameMhz(entry)} MHz · t = {entry.frame.timeSeconds.toFixed(6)} s · Δf = {entry.frame.frequencyOffsetHz.toFixed(3)} Hz</Text>
         <Badges>{bchBadges(entry.frame)}{headerBadge(entry.frame)}</Badges>
-        <Trace title="Recovered phase / PLL error" trace={entry.frame.traces?.phase} />
-        <Trace title="Recovered I" trace={entry.frame.traces?.i} /><Trace title="Recovered Q" trace={entry.frame.traces?.q} />
-      </>}
+      </SignalPlots>}
     </View>;
 }
 const FrameTable = memo(function FrameTable({ entries, active, select, compact = false, filtered = false }: {

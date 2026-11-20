@@ -274,12 +274,16 @@ test("Native JSONL supplies real spectra, decoded sample bits and bounded ENG tr
       assert.ok(trace.count > 0 && trace.values.length <= 1024);
       assert.equal(trace.values.length, Math.ceil(trace.count / trace.stride));
     }
+    // One second: 150 I/Q symbols (300 transmitted bits) and four phase updates per symbol.
+    assert.equal(frame.traces.i.values.length * 2, 50 + 250);
+    assert.equal(frame.traces.q.values.length, frame.traces.i.values.length);
+    assert.equal(frame.traces.phase.values.length, frame.traces.i.values.length * 4);
     assert.ok(frame.bch.every(field => field.valid));
     assert.ok(frame.fields?.some(field => field.section === "Encoded GNSS Location"));
   }
 });
 
-test("FGB engineering output is reduced without altering protected bits", async () => {
+test("FGB engineering output preserves phase resolution and aligns with the raw bits", async () => {
   const result = await execute(executable, ["decode", "--input", resolve(root, "samples", "fgb.wav"),
     "--fgb-only", "--fgb-over-peak", "15", "--noise-preroll-ms", "2000", "--events"],
   { maxBuffer: 8 * 1024 * 1024, timeout: 15000 });
@@ -305,9 +309,17 @@ test("FGB engineering output is reduced without altering protected bits", async 
     assert.equal(frame.headerErrors, 0);
     assert.ok(frame.fields?.some(field => field.name === "Hex ID"));
     const trace = frame.traces?.phase;
-    assert.ok(trace && trace.count > 1024 && trace.stride > 1);
-    assert.equal(trace.values.length, Math.ceil(trace.count / trace.stride));
-    assert.ok(trace.values.length <= 1024);
+    assert.ok(trace && trace.count > 1024 && trace.stride === 1);
+    assert.equal(trace.values.length, trace.count);
+    const start = frame.fgbBitStartSample;
+    assert.ok(start !== undefined && start + frame.rawHex.length * 4 * 18 <= trace.count);
+    const phaseBits = Array.from({ length: frame.rawHex.length * 4 }, (_, n) => {
+      const offset = start + n * 18;
+      const sum = (index: number) => trace.values.slice(index, index + 7).reduce((a, b) => a + b, 0);
+      return sum(offset + 1) <= sum(offset + 10) ? "1" : "0";
+    });
+    const rawBits = Array.from(frame.rawHex, digit => parseInt(digit, 16).toString(2).padStart(4, "0")).join("");
+    assert.equal(phaseBits.join(""), rawBits);
   }
 });
 

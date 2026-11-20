@@ -37,11 +37,12 @@ export function playbackConfiguration(defaults: Settings, profile: z.infer<typeo
 
 const trace = z.object({
   count: z.number().int().nonnegative(), stride: z.number().int().positive(),
-  values: z.array(finite).max(1024),
+  values: z.array(finite).max(4400),
 });
 export const frameSchema = z.object({
   generation: z.union([z.literal(1), z.literal(2)]),
   mode: z.enum(["normal", "self_test"]), headerErrors: z.number().int().min(0).max(9).optional(),
+  fgbBitStartSample: z.number().int().nonnegative().optional(),
   timeSeconds: finite, frequencyOffsetHz: finite, beaconType: z.string().min(1),
   rawHex: z.string().regex(/^[0-9A-F]{28,63}$/),
   correctedHex: z.string().regex(/^[0-9A-F]{28,63}$/),

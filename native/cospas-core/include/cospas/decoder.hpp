@@ -72,6 +72,7 @@ struct Frame {
     std::array<int, 2> corrected_errors{};
     std::array<bool, 2> bch_valid{};
     int header_errors{};
+    int fgb_bit_start_sample{};
     int bch_count{1};
     std::vector<float> phase_error;
     std::vector<float> recovered_i;

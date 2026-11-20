@@ -254,6 +254,7 @@ private:
             if (value > score) { score = value; best = offset; }
         }
         Bits bits = slice(best);
+        std::size_t bit_start = best;
         bool self_test = false;
         int errors = header_errors(bits, self_test);
         if (errors != 0) {
@@ -263,6 +264,7 @@ private:
                 const int alternative_errors = header_errors(alternative, alternative_test);
                 if (alternative_errors < errors) {
                     bits = std::move(alternative);
+                    bit_start = static_cast<std::size_t>(static_cast<int>(best) + delta);
                     errors = alternative_errors;
                     self_test = alternative_test;
                 }
@@ -290,6 +292,7 @@ private:
         frame.generation = 1;
         frame.self_test = self_test;
         frame.header_errors = errors;
+        frame.fgb_bit_start_sample = static_cast<int>(bit_start);
         frame.bch_count = has_bch2 ? 2 : 1;
         frame.time_seconds = double(start_) / 230400.0;
         frame.frequency_offset_hz = frequency_;

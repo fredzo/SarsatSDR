@@ -90,6 +90,7 @@ typedef struct cs_frame {
     char corrected_hex[64];
     cs_bch_status bch[2];
     int32_t header_errors; /* ABI v1 tail extension: FGB 24-bit header Hamming distance, 0 for SGB. */
+    int32_t fgb_bit_start_sample; /* ABI v1 tail extension: first bit in the FGB phase trace. */
 } cs_frame;
 
 typedef struct cs_fgb_trial {

@@ -85,6 +85,7 @@ void write_frame(const cs_frame& frame, const cs_result* result = nullptr, std::
     }
     std::cout << ']';
     if (result) {
+        if (frame.generation == 1) std::cout << ",\"fgbBitStartSample\":" << frame.fgb_bit_start_sample;
         std::cout << ",\"traces\":{";
         cs_error error{};
         for (const auto kind : {CS_TRACE_PHASE_ERROR, CS_TRACE_RECOVERED_I, CS_TRACE_RECOVERED_Q}) {
@@ -92,7 +93,8 @@ void write_frame(const cs_frame& frame, const cs_result* result = nullptr, std::
             const float* values = nullptr;
             std::size_t count = 0;
             check(cs_result_get_trace(result, index, static_cast<cs_trace_kind>(kind), &values, &count, &error), error);
-            const auto stride = std::max<std::size_t>(1, (count + 1023) / 1024);
+            const auto stride = frame.generation == 1 && kind == CS_TRACE_PHASE_ERROR
+                ? 1 : std::max<std::size_t>(1, (count + 1023) / 1024);
             std::cout << '"' << (kind == CS_TRACE_PHASE_ERROR ? "phase" : kind == CS_TRACE_RECOVERED_I ? "i" : "q")
                       << "\":{\"count\":" << count << ",\"stride\":" << stride << ",\"values\":[";
             for (std::size_t n = 0; n < count; n += stride) {

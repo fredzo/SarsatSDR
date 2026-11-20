@@ -164,6 +164,7 @@ void describe(cs_result* result, const cospas::DecodeDiagnostics& diagnostics) {
         metadata.frequency_offset_hz = frame.frequency_offset_hz;
         metadata.detection_level = frame.detection_level;
         metadata.header_errors = frame.header_errors;
+        metadata.fgb_bit_start_sample = frame.fgb_bit_start_sample;
         text(metadata.raw_hex, cospas::hex(frame.raw_bits, frame.generation == 2 && frame.self_test));
         text(metadata.corrected_hex, cospas::hex(frame.corrected_bits, frame.generation == 2 && frame.self_test));
         for (size_t field = 0; field < metadata.bch_count; ++field) {
@@ -427,7 +428,8 @@ cs_status CS_CALL cs_result_get_acquisition(const cs_result* result, cs_acquisit
 
 cs_status CS_CALL cs_result_get_frame(const cs_result* result, size_t index, cs_frame* output,
                                      size_t output_size, cs_error* error) {
-    if (!result || !output || (output_size < sizeof(cs_frame) && output_size != offsetof(cs_frame, header_errors)))
+    if (!result || !output || (output_size < sizeof(cs_frame) &&
+        output_size != offsetof(cs_frame, header_errors) && output_size != offsetof(cs_frame, fgb_bit_start_sample)))
         return status(error, CS_INVALID_ARGUMENT, "Invalid frame result or output buffer");
     if (index >= result->metadata.size())
         return status(error, CS_OUT_OF_RANGE, "Frame index is out of range");
