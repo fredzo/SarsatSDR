@@ -267,8 +267,8 @@ const FrameDetail = memo(function FrameDetail({ entry, compact = false }: { entr
     {!entry ? <><Text style={s.h3}>CURRENT FRAME</Text><Text style={s.empty}>No frame selected.</Text></> : <>
       <View style={s.frameHeader}>
         <Text style={[s.h3, s.frameHeaderTitle]}>CURRENT FRAME</Text>
-        <Text style={[s.frameHeaderTime, s.mono]}>{receivedTime(entry.received)} · {frameMhz(entry)} MHz</Text>
-        <Text style={s.frameHeaderMode}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.frame.mode === "self_test" ? "SELF TEST" : "NORMAL"}</Text>
+        <Text style={s.frameHeaderMode}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.frame.mode === "self_test" ? "SELF TEST" : "NORMAL"} · {entry.frame.beaconType} · {frameMhz(entry)} MHz</Text>
+        <Text style={[s.frameHeaderTime, s.mono]}>{receivedTime(entry.received)}</Text>
       </View>
       {compact ? <CompactFrameDetails key={entry.id} entry={entry} /> : <>
       <View style={s.metadataGrid}>
@@ -678,8 +678,8 @@ const s = StyleSheet.create({
   fullDetail: { padding: 10, backgroundColor: "#001a1a" },
   frameHeader: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
   frameHeaderTitle: { flex: 1, marginBottom: 0 },
-  frameHeaderTime: { flex: 1.4, textAlign: "center", fontSize: 10, color: "#ffffff" },
-  frameHeaderMode: { flex: 1, textAlign: "right", fontSize: 10, color: "#ffffff" },
+  frameHeaderTime: { flex: 1.1, textAlign: "right", fontSize: 10, color: "#ffffff" },
+  frameHeaderMode: { flex: 1.4, textAlign: "center", fontSize: 10, color: "#ffffff" },
   summaryColumns: { flex: 1, minHeight: 0, flexDirection: "row", gap: 12 },
   summaryColumn: { flex: 1, minWidth: 0, gap: 3 },
   summaryBase: { gap: 3 },
