@@ -32,8 +32,11 @@ aussi en ligne de commande, sans interface.
   Frames : tableau a gauche et detail complet a droite, avec defilements
   independants si necessaire. Map : carte sans
   defilement de page, gestes de zoom et deplacement disponibles.
-- Spectre sur 406,000..406,100 MHz, 1024 bins, 10 spectres/s ; waterfall GPU
-  a sept couleurs discretes et points des quatre candidats FGB actifs.
+- Spectre sur 406,000..406,100 MHz, 1024 bins, 10 spectres/s ; trace cyan,
+  remplissage rouge pour les pics forts, echelle verticale adaptative et
+  retombee progressive des pics. Waterfall
+  GPU a fond noir et degrades interpoles en frequence et dans le temps ;
+  les candidats FGB restent marques.
 - Defilement anime de 0,25x a 4x, defaut 1x : historique visible de 28 a
   1,75 secondes, sept secondes par defaut. Texture et position sont synchronisees
   dans un meme rendu Skia sur Android pour eviter les retours arriere.

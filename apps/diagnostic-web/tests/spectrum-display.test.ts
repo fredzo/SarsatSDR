@@ -1,16 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { averageSpectrum, waterfallIndex, automaticWaterfallIndex, WaterfallBuffer, waterfallBins, waterfallRows } from "@sarsat/shared/spectrum-display";
+import { averageSpectrum, persistSpectrum, fftTopDb, fftOrdinate, WaterfallBuffer, waterfallBins, waterfallRows } from "@sarsat/shared/spectrum-display";
 import { nativeEventSchema, type SpectrumEvent } from "@sarsat/shared/protocol";
 
-test("Waterfall uses discrete thresholds and round-to-even", () => {
-  for (const [level, expected] of [[-200, 0], [-159, 0], [-158, 1], [-152, 1],
-    [-151, 2], [-145, 2], [-144, 3], [-138, 4], [-131, 5], [-124, 6], [0, 6]])
-    assert.equal(waterfallIndex(level, 27, 11), expected, String(level));
-  assert.equal(waterfallIndex(-149.5, 5, 0), 4);
-  assert.equal(waterfallIndex(-148.5, 5, 0), 5);
-  assert.equal(waterfallIndex(-150, 15, 0), 4);
-  assert.equal(waterfallIndex(0, 27, 100), 0);
+test("Waterfall interpolates fractional levels instead of snapping to seven colors", () => {
+  const buffer = new WaterfallBuffer();
+  buffer.recolor(0, 0);
+  buffer.push(Array.from({ length: waterfallBins }, (_, n) => -180 + n / 2));
+  const blue = (n: number) => buffer.pixels[n * 4 + 2];
+  assert.ok(blue(0) < blue(1) && blue(1) < blue(2) && blue(2) < blue(12));
+  assert.deepEqual([...buffer.pixels.subarray(48, 52)], [25, 9, 65, 255]);
 });
 
 test("Display applies native display offset before averaging, without coloring unavailable frequencies", () => {
@@ -21,7 +20,18 @@ test("Display applies native display offset before averaging, without coloring u
   assert.equal(first[1], -140);
   const next = averageSpectrum(line, Array<number>(1024).fill(-150), .9);
   assert.equal(next[1], -141);
-  assert.equal(waterfallIndex(next[0], 27, 11), 0);
+  assert.equal(next[0], -240);
+});
+
+test("FFT draws FGB peaks near the top and lets them decay at a time-based rate", () => {
+  const peak = persistSpectrum([-104, -131], [-130, -132], .1);
+  assert.deepEqual(peak, [-104, -131]);
+  const height = 230;
+  assert.ok(fftOrdinate(peak[0], fftTopDb(peak, 0), height) < height * .15);
+  assert.ok(fftOrdinate(-52, fftTopDb([-60], 8), height) > 12, "Calibrated peak fits the scale");
+  assert.deepEqual(persistSpectrum([-133, -240], peak, .1), [-107, -240]);
+  assert.deepEqual(persistSpectrum([-133, -131], peak, .5), [-119, -131]);
+  assert.deepEqual(persistSpectrum([-133, -131], peak, 1), [-133, -131]);
 });
 
 test("Manual calibration recolors existing history without coloring missing bins", () => {
@@ -29,9 +39,10 @@ test("Manual calibration recolors existing history without coloring missing bins
   const levels = Array<number>(waterfallBins).fill(-140);
   levels[0] = -240;
   buffer.push(levels);
+  const red = buffer.pixels[4];
   buffer.recolor(27, 11, 7);
   assert.deepEqual([...buffer.pixels.subarray(0, 4)], [0, 0, 0, 255]);
-  assert.deepEqual([...buffer.pixels.subarray(4, 8)], [240, 236, 0, 255]);
+  assert.ok(buffer.pixels[4] > red);
   assert.equal(buffer.head, 1);
   assert.equal(buffer.levels[1], -140);
   buffer.recolor(27, 11, 100);
@@ -44,34 +55,35 @@ test("Automatic waterfall keeps quiet noise dark and does not track a broadband 
   const noise = Array.from({ length: waterfallBins }, (_, n) => -141 + n % 3);
   buffer.push(noise, .1);
   const floor = buffer.noiseFloorDb!;
-  for (const value of noise) assert.ok(automaticWaterfallIndex(value, floor) <= 1);
-  assert.equal(automaticWaterfallIndex(floor + 6, floor), 2);
+  assert.deepEqual([...buffer.pixels.subarray(0, 4)], [0, 0, 0, 255]);
+  assert.ok(buffer.pixels[10] > buffer.pixels[2], "Auto mode also shades intermediate levels");
   const burst = noise.map(value => value + 18);
   for (let n = 2; n <= 8; ++n) buffer.push(burst, n / 10);
   assert.ok(buffer.noiseFloorDb! - floor <= .15, "A short broadband burst must not become the estimated noise floor");
-  assert.deepEqual([...buffer.pixels.subarray(waterfallBins * 4, waterfallBins * 4 + 4)], [219, 43, 40, 255]);
+  assert.deepEqual([...buffer.pixels.subarray(waterfallBins * 4, waterfallBins * 4 + 4)], [231, 43, 48, 255]);
   buffer.push(noise, .9);
+  buffer.recolor(27, 11, 0, true);
   const before = buffer.pixels.slice();
   buffer.recolor(27, 11, 20, true);
-  assert.deepEqual(buffer.pixels, before, "RF calibration must not change relative automatic contrast");
+  assert.ok(buffer.pixels.every((value, n) => value === before[n]), "RF calibration must not change relative automatic contrast");
   buffer.recolor(27, 11);
-  assert.deepEqual([...buffer.pixels.subarray(0, 4)], [1, 217, 63, 255], "Manual mode restores the absolute palette");
+  assert.notDeepEqual(buffer.pixels.subarray(0, 4), before.subarray(0, 4), "Manual mode restores absolute colors");
 });
 
 test("Waterfall updates one ring row at a time and wraps without losing older lines", () => {
   const buffer = new WaterfallBuffer();
-  const green = Array<number>(waterfallBins).fill(-140);
+  const blue = Array<number>(waterfallBins).fill(-140);
   const orange = Array<number>(waterfallBins).fill(-130);
   const untouched = buffer.pixels.slice(waterfallBins * 4);
-  assert.equal(buffer.push(green), 0);
-  assert.deepEqual([...buffer.pixels.subarray(0, 4)], [1, 217, 63, 255]);
+  assert.equal(buffer.push(blue), 0);
+  const first = buffer.pixels.slice(0, 4);
   assert.deepEqual(buffer.pixels.subarray(waterfallBins * 4), untouched);
   for (let n = 1; n < waterfallRows; ++n) buffer.push(orange);
   assert.equal(buffer.head, 0);
   assert.equal(buffer.push(orange), 0);
   assert.equal(buffer.head, 1);
-  assert.deepEqual([...buffer.pixels.subarray(0, 4)], [255, 139, 0, 255]);
-  assert.deepEqual([...buffer.pixels.subarray(waterfallBins * 4, waterfallBins * 4 + 4)], [255, 139, 0, 255]);
+  assert.notDeepEqual(buffer.pixels.subarray(0, 4), first);
+  assert.deepEqual(buffer.pixels.subarray(0, 4), buffer.pixels.subarray(waterfallBins * 4, waterfallBins * 4 + 4));
 });
 
 test("Waterfall recolors stored history without resetting chronology or painting missing rows", () => {
@@ -79,10 +91,10 @@ test("Waterfall recolors stored history without resetting chronology or painting
   buffer.push(Array<number>(waterfallBins).fill(-140));
   buffer.push(Array<number>(waterfallBins).fill(-160));
   const levels = buffer.levels.slice();
-  buffer.recolor(0, 11);
+  buffer.recolor(0, 0);
   assert.equal(buffer.head, 2);
   assert.deepEqual(buffer.levels, levels);
-  assert.deepEqual([...buffer.pixels.subarray(0, 4)], [219, 43, 40, 255]);
+  assert.deepEqual([...buffer.pixels.subarray(0, 4)], [231, 43, 48, 255]);
   assert.deepEqual([...buffer.pixels.subarray(waterfallBins * 8, waterfallBins * 8 + 4)], [0, 0, 0, 255]);
 });
 

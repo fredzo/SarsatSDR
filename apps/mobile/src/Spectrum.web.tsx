@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { SpectrumEvent, AcquisitionChannel } from "@sarsat/shared/protocol";
 import { candidateColors, averageSpectrum, WaterfallBuffer, waterfallBins as BINS, waterfallRows as ROWS,
+  persistSpectrum, fftMinDb, fftTopDb, fftOrdinate, spectrumColors as colors,
   waterfallLineMs, waterfallVisibleRows } from "@sarsat/shared/spectrum-display";
 import { DetectionActivity } from "./DetectionActivity";
 
@@ -26,6 +27,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
   const fft = useRef<HTMLCanvasElement>(null);
   const waterfall = useRef<HTMLCanvasElement>(null);
   const previous = useRef<number[]>([]);
+  const averagedTrace = useRef<number[]>([]);
   const latest = useRef<SpectrumEvent | null>(null);
   const markerLevels = useRef(new Map<number, { frequency: number; raw: number; level: number }>());
   const renderer = useRef<{ push: (values: Float32Array, timeSeconds: number) => void; draw: () => void } | null>(null);
@@ -36,6 +38,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
 
   useEffect(() => {
     previous.current = [];
+    averagedTrace.current = [];
     latest.current = null;
     markerLevels.current.clear();
     setNoiseFloor(null);
@@ -59,14 +62,13 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
       const fragment = shader(gl, gl.FRAGMENT_SHADER, `#version 300 es
         precision highp float;
         uniform sampler2D history;
-        uniform int head;
+        uniform float head;
         uniform float visibleRows;
         uniform float progress;
         in vec2 uv; out vec4 color;
         void main() {
-          int age = int(floor((1.0 - uv.y) * visibleRows + 1.0 - progress));
-          int row = (head + ${ROWS - 1} - age) % ${ROWS};
-          color = texelFetch(history, ivec2(int(min(${BINS - 1}.0, uv.x * ${BINS}.0)), row), 0);
+          float age = clamp((1.0 - uv.y) * visibleRows + 0.5 - progress, 0.0, ${ROWS - 1}.0);
+          color = texture(history, vec2(uv.x, (head - 0.5 - age) / ${ROWS}.0));
         }`);
       program = gl.createProgram();
       if (!program) throw new Error("Could not allocate waterfall program");
@@ -76,10 +78,10 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
       texture = gl.createTexture();
       if (!texture) throw new Error("Could not allocate waterfall texture");
       gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, BINS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, history.pixels);
       const activeProgram = program;
       const historyUniform = gl.getUniformLocation(activeProgram, "history");
@@ -102,7 +104,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
         gl.viewport(0, 0, canvas.width, canvas.height);
         gl.useProgram(activeProgram);
         gl.uniform1i(historyUniform, 0);
-        gl.uniform1i(headUniform, history.head);
+        gl.uniform1f(headUniform, history.head);
         gl.uniform1f(rowsUniform, waterfallVisibleRows(options.current.speed));
         gl.uniform1f(progressUniform, Math.min(1, (performance.now() - arrivedAt) / waterfallLineMs));
         gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -145,52 +147,70 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
       if (!ctx) { setError("Canvas 2D unavailable: spectrum cannot be displayed."); return; }
       ctx.scale(ratio, ratio);
       const width = canvas.clientWidth, height = canvas.clientHeight;
-      ctx.fillStyle = "#001000"; ctx.fillRect(0, 0, width, height);
+      if (width <= 48 || height <= 30) return;
       ctx.font = "11px monospace";
-      const ordinate = (level: number) => 12 + Math.max(0, Math.min(80, -70 - level)) / 80 * (height - 30);
+      const top = fftTopDb(previous.current, calibrationDb);
+      const ordinate = (level: number) => fftOrdinate(level, top, height);
+      const abscissa = (fraction: number) => 40 + fraction * (width - 48);
+      ctx.fillStyle = colors.background;
+      ctx.fillRect(0, 0, width, height);
+      const trace = new Path2D();
+      if (previous.current.length) {
+        previous.current.forEach((value, n) => {
+          const x = abscissa((n + .5) / BINS);
+          const y = ordinate(value <= -240 ? value : value + calibrationDb);
+          if (n === 0) trace.moveTo(x, y); else trace.lineTo(x, y);
+        });
+        const bottom = ordinate(fftMinDb);
+        const area = new Path2D(trace);
+        area.lineTo(abscissa((previous.current.length - .5) / BINS), bottom);
+        area.lineTo(abscissa(.5 / BINS), bottom);
+        area.closePath();
+        const fill = ctx.createLinearGradient(0, ordinate(top), 0, bottom);
+        colors.fill.forEach((color, n) => fill.addColorStop(colors.fillStops[n], color));
+        ctx.fillStyle = fill;
+        ctx.fill(area);
+      }
+      ctx.strokeStyle = colors.grid;
+      ctx.fillStyle = colors.labels;
       ctx.setLineDash([3, 3]);
-      for (let db = -150; db <= -70; db += 5) {
+      const labelStep = compact && top - fftMinDb > 50 ? 20 : 10;
+      for (let db = top; db >= fftMinDb; db -= 5) {
         const y = ordinate(db);
-        ctx.strokeStyle = "#335555"; ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(width - 8, y); ctx.stroke();
-        ctx.fillStyle = "#99baba"; ctx.fillText(String(db), 4, y + 4);
+        ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(width - 8, y); ctx.stroke();
+        if ((top - db) % labelStep === 0) ctx.fillText(String(db), 4, y + 4);
       }
       for (let n = 0; n <= 10; n++) {
-        const x = 40 + n / 10 * (width - 48);
-        ctx.strokeStyle = "#335555";
+        const x = abscissa(n / 10);
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height - 19); ctx.stroke();
-        ctx.fillStyle = "#99baba";
         if (!compact || n % 5 === 0)
           ctx.fillText((406 + n / 100).toFixed(3), Math.max(40, Math.min(width - 49, x - 20)), height - 4);
       }
       ctx.setLineDash([]);
       if (previous.current.length) {
-        ctx.strokeStyle = "#00ffff"; ctx.lineWidth = 1;
-        ctx.beginPath();
-        previous.current.forEach((value, n) => {
-          const x = 40 + (n + .5) / 1024 * (width - 48);
-          const y = ordinate(value <= -240 ? value : value + calibrationDb);
-          if (n === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        });
-        ctx.stroke();
+        ctx.strokeStyle = colors.trace;
+        ctx.stroke(trace);
         for (const channel of channels) {
           const frequency = centerHz + channel.frequencyOffsetHz;
           const held = markerLevels.current.get(channel.channel)?.level;
           if (held === undefined) continue;
           const level = held + calibrationDb;
-          if (frequency < 406000000 || frequency > 406100000 || level < -150 || level > -70) continue;
+          if (frequency < 406000000 || frequency > 406100000 || level < fftMinDb) continue;
           ctx.fillStyle = candidateColors[channel.channel];
           ctx.beginPath();
-          ctx.arc(40 + (frequency - 406000000) / 100000 * (width - 48), ordinate(level), 5, 0, 2 * Math.PI);
+          ctx.arc(abscissa((frequency - 406000000) / 100000), ordinate(level), 5, 0, 2 * Math.PI);
           ctx.fill();
         }
       } else {
-        ctx.fillStyle = "#99baba"; ctx.fillText("Waiting for an I/Q stream", 55, 30);
+        ctx.fillText("Waiting for an I/Q stream", 55, 30);
       }
     };
     if (line && line !== latest.current) {
+      const elapsed = latest.current ? line.timeSeconds - latest.current.timeSeconds : 0;
       latest.current = line;
-      previous.current = averageSpectrum(line, previous.current, average);
-      renderer.current?.push(new Float32Array(previous.current), line.timeSeconds);
+      averagedTrace.current = averageSpectrum(line, averagedTrace.current, average);
+      previous.current = persistSpectrum(averagedTrace.current, previous.current, elapsed);
+      renderer.current?.push(new Float32Array(averagedTrace.current), line.timeSeconds);
     }
     // Hold the acquisition ordinate even if RTL AGC changes during the trial.
     if (line) {
@@ -209,33 +229,33 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
   }, [line, channels, centerHz, average, calibrationDb, epoch, compact]);
 
   const mono = "Consolas,monospace";
-  return <section style={{ margin: compact ? 0 : "0 18px", flex: compact ? 1 : undefined, minHeight: 0, display: "flex", flexDirection: "column", background: "#000", border: "1px solid #335555", borderRadius: 3, overflow: "hidden" }}
+  return <section style={{ margin: compact ? 0 : "0 18px", flex: compact ? 1 : undefined, minHeight: 0, display: "flex", flexDirection: "column", background: colors.panel, border: `1px solid ${colors.border}`, borderRadius: 3, overflow: "hidden" }}
     aria-label="Spectrum and waterfall 406 to 406.100 MHz">
-    <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "1fr auto 1fr", gap: compact ? 4 : 0, alignItems: "center", justifyItems: compact ? "center" : undefined, padding: compact ? "5px 4px" : "9px 12px", font: `10px ${mono}`, background: "#001000", color: "#00ffff" }}>
+    <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "1fr auto 1fr", gap: compact ? 4 : 0, alignItems: "center", justifyItems: compact ? "center" : undefined, padding: compact ? "5px 4px" : "9px 12px", font: `10px ${mono}`, background: colors.background, color: colors.trace }}>
       {!compact && <span>FFT <b style={{ marginLeft: 10 }}>406.000 — 406.100 MHz</b></span>}
       <div style={{ display: "flex" }}>
         <DetectionActivity generation="FGB" detections={fgbDetections} />
         <DetectionActivity generation="SGB" detections={sgbDetections} />
       </div>
       {!compact && <span style={{ textAlign: "right" }}>{relative ? "Relative level · WAV" : `Estimated dBm · offset ${calibrationDb.toFixed(1)} dB`}</span>}</div>
-    <div style={{ position: "relative", flex: compact ? 52 : "0 0 230px", minHeight: 0 }}>
+    <div style={{ position: "relative", flex: compact ? 64 : "0 0 230px", minHeight: 0 }}>
       <canvas ref={fft} style={{ display: "block", position: "absolute", width: "100%", height: "100%" }} aria-label="Measured FFT spectrum" />
     </div>
-    <div style={{ display: "flex", flex: compact ? 48 : undefined, minHeight: 0, borderTop: "1px solid #003333" }}>
-      <span style={{ width: 40, padding: "8px 3px", boxSizing: "border-box", color: "#99baba", font: `9px ${mono}`,
+    <div style={{ display: "flex", flex: compact ? 36 : undefined, minHeight: 0, borderTop: `1px solid ${colors.separator}`, background: "#000" }}>
+      <span style={{ width: 40, padding: "8px 3px", boxSizing: "border-box", color: colors.labels, font: `9px ${mono}`,
         display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
         <span>0 s</span><span>−{Number((7 / speed).toFixed(2))}s</span></span>
       <canvas ref={waterfall} style={{ display: "block", width: "calc(100% - 48px)", height: compact ? "100%" : 180, minHeight: 0 }}
         aria-label={`GPU waterfall, ${(7 / speed).toFixed(2)} seconds of history`} />
     </div>
     {error && <p role="alert" style={{ background: "#330f0f", color: "#ff8484", padding: 12, margin: 0 }}>{error}</p>}
-    {!compact && <><div style={{ display: "flex", justifyContent: "space-between", font: `10px ${mono}`, color: "#99baba", padding: "6px 9px 6px 40px" }}>
+    {!compact && <><div style={{ display: "flex", justifyContent: "space-between", font: `10px ${mono}`, color: colors.labels, padding: "6px 9px 6px 40px" }}>
       <span>406.000 MHz</span><span>406.050 MHz</span><span>406.100 MHz</span></div>
     <div style={{ padding: "6px 12px", color: "#ffffff", fontSize: 10 }}>
-      {automatic ? `WF Auto · noise ${noiseFloor === null ? "—" : (noiseFloor + calibrationDb).toFixed(1)} ${relative ? "relative dB" : "dBm"} · 3 dB/color`
+      {automatic ? `WF Auto · noise ${noiseFloor === null ? "—" : (noiseFloor + calibrationDb).toFixed(1)} ${relative ? "relative dB" : "dBm"} · 18 dB color span`
         : "Manual WF · higher Base = darker background; higher Range = lower contrast"}
     </div>
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, padding: "8px 12px", background: "#001000", color: "#ffffff", fontSize: 10 }} aria-label="Active FGB channels">
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, padding: "8px 12px", background: colors.background, color: "#ffffff", fontSize: 10 }} aria-label="Active FGB channels">
       <span>Active FGB trials · before BCH validation:</span>
       {channels.length ? channels.map(channel => <span key={channel.channel} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
         data-channel={channel.channel} data-frequency-hz={centerHz + channel.frequencyOffsetHz}>
