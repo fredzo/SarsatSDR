@@ -45,7 +45,7 @@ class SarsatNativeModule : Module() {
       throw CodedException("I/Q recording to shared storage requires Android 10 or later")
     if (!rtlActive || engine == null) throw CodedException("I/Q recording requires a running RTL-SDR acquisition")
     if (recording != null) throw CodedException("An I/Q recording is already active")
-    val name = "capture-${SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS", Locale.US).format(Date())}.wav"
+    val name = "capture-${SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())}.wav"
     val values = ContentValues().apply {
       put(MediaStore.MediaColumns.DISPLAY_NAME, name)
       put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")
@@ -60,9 +60,13 @@ class SarsatNativeModule : Module() {
       val opened = resolver.openFileDescriptor(uri, "rw")
         ?: throw CodedException("Could not open I/Q WAV output")
       descriptor = opened
+      val storedName = resolver.query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        if (!cursor.moveToFirst()) throw CodedException("Could not read the I/Q capture filename")
+        cursor.getString(0)
+      } ?: throw CodedException("Could not read the I/Q capture filename")
       NativeEngine.startRecording(opened.fd)
-      recording = Recording(uri, opened, name)
-      sendEvent("onRecording", mapOf("file" to name))
+      recording = Recording(uri, opened, storedName)
+      sendEvent("onRecording", mapOf("file" to storedName))
     } catch (error: Exception) {
       try { descriptor?.close() } catch (cleanup: Exception) { error.addSuppressed(cleanup) }
       try { resolver.delete(uri, null, null) } catch (cleanup: Exception) { error.addSuppressed(cleanup) }

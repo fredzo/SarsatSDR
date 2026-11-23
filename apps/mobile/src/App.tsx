@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
-import { Animated, FlatList, Keyboard, KeyboardAvoidingView, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
+import { Animated, Easing, FlatList, Keyboard, KeyboardAvoidingView, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
   type TextStyle, type ViewStyle } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import Slider from "@react-native-community/slider";
@@ -100,6 +100,25 @@ function Button({ title, onPress, disabled, kind, icon: Icon, backgroundColor, i
     {Icon && <Icon size={iconOnly ? 26 : 20} color={color} />}
     {!iconOnly && <Text style={[s.buttonText, { color }, kind === "primary" && { fontWeight: "600" }]}>{title}</Text>}
   </Pressable>;
+}
+function CaptureProgress({ elapsed, duration, recording }: { elapsed: number; duration: number; recording: boolean }) {
+  const movement = useRef(new Animated.Value(0)).current;
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    if (!recording || !width) return;
+    const animation = Animated.loop(Animated.timing(movement, {
+      toValue: 1, duration: 1500, easing: Easing.linear, useNativeDriver: Platform.OS !== "web",
+    }));
+    animation.start();
+    return () => { animation.stop(); movement.setValue(0); };
+  }, [recording, width, movement]);
+  return <View accessibilityLabel={recording ? "I/Q recording in progress" : "Capture progress"} accessibilityRole="progressbar"
+    style={[s.progress, recording && { backgroundColor: "#4a1616" }]} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
+    {recording
+      ? <Animated.View style={[s.progressBar, { backgroundColor: "#ff4444", width: width / 4,
+          transform: [{ translateX: movement.interpolate({ inputRange: [0, 1], outputRange: [-width / 4, width] }) }] }]} />
+      : <View style={[s.progressBar, { width: `${Math.min(100, Math.min(elapsed, duration) / duration * 100)}%` }]} />}
+  </View>;
 }
 function Check({ label, value, onChange, disabled, compact }: { label: string; value: boolean; onChange: (value: boolean) => void; disabled?: boolean; compact?: boolean }) {
   return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: value, disabled }} disabled={disabled}
@@ -821,6 +840,7 @@ export default function App() {
       ...(source === "sample" && useSampleProfile ? playback : {}),
       ...(selectedDevice ? { bus: location[0], address: location[1] } : {}) });
     if (!parsed.success) { setError(parsed.error.issues.map(issue => issue.message).join(" · ")); return; }
+    setSession(null);
     if (parsed.data.fgbFm && parsed.data.settings.fgb) fmAudio.current?.activate();
     transport?.send(parsed.data);
     return true;
@@ -963,10 +983,12 @@ export default function App() {
               value={useSampleProfile ? playback?.noisePrerollMs ?? 0 : preroll} onChange={value => changeSaved("preroll", value)} />
             <View style={s.row}>
               <View style={s.fill}>{rtlAcquisition
-                ? <Button kind="primary" backgroundColor="#b71c1c" icon={Circle} title="RECORD"
+                ? <Button kind="primary" backgroundColor="#b71c1c" icon={Circle} title={recordingFile ? "RECORDING" : "RECORD"}
+                    style={{ paddingHorizontal: 8 }}
                     disabled={status !== "running" || !!recordingFile || recordingPending || !transport?.startRecording}
                     onPress={() => { void changeRecording(true); }} />
-                : <Button kind="primary" icon={Play} title="PLAY" disabled={busy || !connected || !info || !settings || !preferencesReady}
+                : <Button kind="primary" icon={Play} title={busy && session?.source === "sample" ? "PLAYING" : "PLAY"}
+                    disabled={busy || !connected || !info || !settings || !preferencesReady}
                     onPress={() => start("sample")} />}</View>
               <View style={s.fill}><Button icon={Square} title="STOP" disabled={!busy || recordingPending}
                 onPress={() => { if (recordingFile) void changeRecording(false); else stop(); }} /></View>
@@ -988,9 +1010,7 @@ export default function App() {
             : <Text numberOfLines={2} style={s.p}>Manual mode: DSP settings from Settings.</Text>}
         </View>
       </View>
-      <View accessibilityLabel="Capture progress" style={s.progress}>
-        <View style={[s.progressBar, { width: `${Math.min(100, Math.min(elapsed, duration) / duration * 100)}%` }]} />
-      </View>
+      <CaptureProgress elapsed={elapsed} duration={duration} recording={!!recordingFile} />
     </View>}
     {(tab === "Receiver" || tab === "Signal" || tab === "Settings") &&
     <KeyboardAvoidingView style={s.fill} enabled={tab === "Settings"} behavior={Platform.OS === "ios" ? "padding" : "height"}>

@@ -440,7 +440,9 @@ Player utilise le meme partage 75/25, sans defilement, avec la progression
 sur toute la largeur en bas. Les samples fournis utilisent un centre de 406,050 MHz.
 Pendant une reception RTL-SDR, PLAY devient RECORD (rouge). Sur Android 10+,
 RECORD enregistre le flux I/Q en WAV stereo PCM 16 bits a 921600 echantillons/s,
-dans `Download/SarsatSDR/capture-AAAA-MM-JJ_HH-mm-ss-SSS.wav`.
+dans `Download/SarsatSDR/capture-AAAA-MM-JJ_HH-mm-ss.wav`.
+Les libelles PLAYING et RECORDING indiquent l'action en cours ; pendant
+l'enregistrement, la barre inferieure rouge defile en boucle.
 STOP finalise d'abord le WAV sans interrompre la reception ; un second STOP
 arrete la reception. L'arret du recepteur, une reconnexion ou un changement
 de frequence finalise aussi la capture. L'offset tuner est compense et le centre
