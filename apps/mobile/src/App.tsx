@@ -5,13 +5,13 @@ import { Picker } from "@react-native-picker/picker";
 import Slider from "@react-native-community/slider";
 import * as Clipboard from "expo-clipboard";
 import Svg, { G, Path, Polyline, Text as SvgText } from "react-native-svg";
-import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileSearch, FileText, FlaskConical, FolderOpen, MapPin,
+import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileSearch, FileText, FlaskConical, FolderOpen, Globe, MapPin,
   Navigation, Play, BoomBox, Radio, RadioTower, RefreshCw, Settings as SettingsIcon, Square, Usb, type LucideIcon,
   ArrowBigRight,
   ArrowBigLeft, Circle, Copy, ExternalLink, Minus, Pencil, Plus, Share2, X } from "lucide-react-native";
 import { startSchema, playbackConfiguration, type Frame, type Info, type Settings, type SpectrumEvent,
   type Diagnostics, type AcquisitionChannel, type ServerEvent } from "@sarsat/shared/protocol";
-import { beaconLocator, beaconPosition, googleMapsUrl, wazeUrl } from "@sarsat/shared/beacon-position";
+import { beaconLocator, beaconPosition, geoUrl, googleMapsUrl, wazeUrl } from "@sarsat/shared/beacon-position";
 import { Spectrum } from "./Spectrum";
 import { BeaconMap } from "./BeaconMap";
 import { createTransport } from "./transport";
@@ -633,6 +633,7 @@ const MapPanel = memo(function MapPanel({ entry, compact = false }: { entry: Ent
         <View style={s.mapActions}>
           {mapLink("Google Maps", googleMapsUrl(position.lat, position.lon), MapPin, "Google\nMaps")}
           {mapLink("Waze", wazeUrl(position.lat, position.lon), Navigation, "Waze", "#087899")}
+          {mapLink("Geo", geoUrl(position.lat, position.lon), Globe)}
         </View>
       </View>
     </>}
@@ -1258,7 +1259,7 @@ const s = StyleSheet.create({
   mapContent: { flex: 1, minHeight: 0, flexDirection: "row", gap: 8 },
   mapActions: { width: 64, gap: 6 },
   emptyPane: { flex: 1, padding: 12, alignItems: "center", justifyContent: "center", gap: 8 },
-  mapLink: { minHeight: 72, alignItems: "center", justifyContent: "center", gap: 4, borderRadius: 8, backgroundColor: "#245cad" },
+  mapLink: { flex: 1, minHeight: 0, alignItems: "center", justifyContent: "center", gap: 4, borderRadius: 8, backgroundColor: "#245cad" },
   mapLinkText: { fontSize: 10, color: "#fff", textAlign: "center" },
   nav: { flexDirection: "row", flexShrink: 0, backgroundColor: "#001a1a", borderTopWidth: 1, borderTopColor: "#335555", paddingVertical: 5, paddingHorizontal: 4, gap: 2 },
   navItem: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center" },

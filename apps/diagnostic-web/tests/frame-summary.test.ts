@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Frame } from "@sarsat/shared/protocol";
-import { beaconLocator } from "@sarsat/shared/beacon-position";
+import { beaconLocator, geoUrl } from "@sarsat/shared/beacon-position";
 import { fitExtraFields, formatFieldFrequencies, frameDetailType, frameSummary } from "../../mobile/src/frame-summary";
 
 const frame = (generation: 1 | 2, fields: NonNullable<Frame["fields"]>): Frame => ({
@@ -10,6 +10,11 @@ const frame = (generation: 1 | 2, fields: NonNullable<Frame["fields"]>): Frame =
   bch: [{ valid: true, correctedErrors: 0 }], fields,
 });
 const field = (name: string, value: string, section = "Identification") => ({ name, value, section });
+
+test("Geo navigation uses signed decimal coordinates with six fractional digits", () => {
+  assert.equal(geoUrl(48.123333, -1.234444), "geo:48.123333,-1.234444");
+  assert.equal(geoUrl(-33.5, 0), "geo:-33.500000,0.000000");
+});
 
 test("FGB summary uses decoded data and formats the position", () => {
   const summary = frameSummary(frame(1, [

@@ -22,3 +22,4 @@ export function beaconLocator(frame: Frame) {
 
 export const googleMapsUrl = (lat: number, lon: number) => `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
 export const wazeUrl = (lat: number, lon: number) => `https://waze.com/ul?ll=${lat},${lon}&navigate=yes`;
+export const geoUrl = (lat: number, lon: number) => `geo:${lat.toFixed(6)},${lon.toFixed(6)}`;
