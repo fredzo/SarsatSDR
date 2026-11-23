@@ -1,5 +1,5 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
-import { Animated, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Animated, FlatList, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
   type TextStyle, type ViewStyle } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import Slider from "@react-native-community/slider";
@@ -43,6 +43,11 @@ function ActionPopup({ title, actions, close }: { title: string; actions: Action
 }
 async function copyText(value: string) {
   if (!await Clipboard.setStringAsync(value)) throw new Error("Could not copy to the clipboard");
+}
+async function shareContent(value: string, url = false) {
+  if (Platform.OS !== "web") { await Share.share({ message: value }); return; }
+  if (!navigator.share) throw new Error("Sharing is unavailable in this browser. Use Copy instead.");
+  await navigator.share(url ? { url: value } : { text: value });
 }
 const frameMhz = (entry: Entry) => ((entry.centerHz + entry.frame.frequencyOffsetHz) / 1e6).toFixed(3);
 const modeLabel = (mode: Frame["mode"]) => mode === "self_test" ? "Self-test" : "Normal";
@@ -110,19 +115,44 @@ function NumberField({ label, value, onChange, disabled, style, big }: { label: 
       style={[s.input, big && s.bigInput, disabled && { opacity: .5 }]}
       onChangeText={next => { setText(next); const n = Number(next.replace(",", ".")); if (next !== "" && Number.isFinite(n)) onChange(n); }} /></View>;
 }
-function Select({ label, value, onChange, items, disabled }: { label: string; value: string; onChange: (value: string) => void;
-  items: { label: string; value: string }[]; disabled?: boolean }) {
+function Select({ label, value, onChange, items, disabled, narrow = false }: { label: string; value: string; onChange: (value: string) => void;
+  items: { label: string; value: string }[]; disabled?: boolean; narrow?: boolean }) {
   return <View style={s.field}><Text style={s.label}>{label}</Text>
     <View style={s.picker}><Picker accessibilityLabel={label} enabled={!disabled} selectedValue={value} onValueChange={next => onChange(String(next))}
-      dropdownIconColor="#00ffff" style={{ minWidth: 220, color: "#ffffff", backgroundColor: "#001a1a" }}>
+      dropdownIconColor="#00ffff" style={{ ...(narrow ? { width: "100%" as const } : { minWidth: 220 }), color: "#ffffff", backgroundColor: "#001a1a" }}>
       {items.map(item => <Picker.Item key={item.value} label={item.label} value={item.value} color="#ffffff" style={{ backgroundColor: "#001a1a" }} />)}</Picker></View></View>;
 }
-function Range({ label, value, min, max, step, onChange, digits = 0, disabled }: { label: string; value: number; min: number; max: number;
-  step: number; onChange: (value: number) => void; digits?: number; disabled?: boolean }) {
-  return <View style={[s.range, disabled && { opacity: .5 }]}><Text style={s.small}>{label}</Text>
-    <Slider accessibilityLabel={label} style={{ width: 160, height: 36 }} minimumValue={min} maximumValue={max} step={step} value={value}
+function Range({ label, value, min, max, step, onChange, digits = 0, disabled, stacked = false }: { label: string; value: number; min: number; max: number;
+  step: number; onChange: (value: number) => void; digits?: number; disabled?: boolean; stacked?: boolean }) {
+  return <View style={[s.range, stacked && { flexDirection: "column", alignItems: "stretch", gap: 0 }, disabled && { opacity: .5 }]}>
+    <Text style={s.small}>{label}</Text><View style={s.row}>
+    <Slider accessibilityLabel={label} style={stacked ? { flex: 1, height: 32 } : { width: 160, height: 36 }} minimumValue={min} maximumValue={max} step={step} value={value}
       disabled={disabled} onValueChange={onChange} minimumTrackTintColor="#00ffff" maximumTrackTintColor="#335555" thumbTintColor="#3fe6e6" />
-    <Text style={[s.small, s.mono]}>{value.toFixed(digits)}</Text></View>;
+    <Text style={[s.small, s.mono]}>{value.toFixed(digits)}</Text></View></View>;
+}
+function CenterFrequency({ value, disabled, onChange, onError }: {
+  value: number; disabled: boolean; onChange: (value: number) => void; onError: (message: string) => void;
+}) {
+  const [text, setText] = useState(value.toFixed(3));
+  const [focused, setFocused] = useState(false);
+  useEffect(() => setText(value.toFixed(3)), [value]);
+  const draft = Number(text.replace(",", "."));
+  const displayedText = !focused && text.trim() && Number.isFinite(draft) ? draft.toFixed(3) : text;
+  function apply() {
+    const mhz = Number(text.replace(",", "."));
+    if (!text.trim() || !Number.isFinite(mhz) || mhz < 100 || mhz > 999) {
+      onError("Center frequency must be between 100 and 999 MHz."); return;
+    }
+    setText(mhz.toFixed(3));
+    onChange(Math.round(mhz * 1e6) / 1e6);
+  }
+  return <View style={s.field}><Text style={s.label}>Center · MHz</Text>
+    <View style={s.row}><TextInput accessibilityLabel="Center · MHz" keyboardType="decimal-pad" editable={!disabled}
+      style={[s.input, s.mono, { flex: 1, minWidth: 0, fontSize: 20 }]} value={displayedText}
+      onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onChangeText={setText} onSubmitEditing={apply} />
+      <Button iconOnly title="Apply center frequency" icon={RefreshCw} disabled={disabled} onPress={apply} />
+    </View>
+  </View>;
 }
 function Badge({ text, tone, accessibilityLabel }: { text: string; tone: "valid" | "invalid" | "corrected"; accessibilityLabel?: string }) {
   return <Text accessibilityLabel={accessibilityLabel} style={[s.badge, s[tone]]}>{text}</Text>;
@@ -335,74 +365,76 @@ function Signal({ entry }: { entry: Entry | undefined }) {
       </SignalPlots>}
     </View>;
 }
+const frameRowHeight = 62;
+const frameTableHeaders = ["Received", "Gen.", "Type", "Mode", "MHz", "Locator", "BCH"];
+const FrameRow = memo(function FrameRow({ entry, index, locator, widths, selected, compact, select }: {
+  entry: Entry; index: number; locator: string; widths: number[]; selected: boolean; compact: boolean; select: (id: number) => void;
+}) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={`Select frame ${index + 1}`}
+    accessibilityHint={`Mode: ${modeLabel(entry.frame.mode)}`} accessibilityState={{ selected }} onPress={() => select(entry.id)}
+    style={[s.tr, { height: frameRowHeight }, selected && { backgroundColor: "#004444" }]}>
+    <Text style={[s.td, s.mono, { width: widths[0] }]}>
+      {new Date(entry.received).toLocaleDateString("en-GB")}{"\n"}
+      {new Date(entry.received).toLocaleTimeString("en-GB", { hour12: false })}.{entry.received.slice(20, 23)}
+    </Text>
+    <Text style={[s.td, s.mono, { width: widths[1] }]}>{entry.frame.generation === 1 ? "FGB" : "SGB"}</Text>
+    <Text numberOfLines={2} style={[s.td, s.mono, { width: widths[2] }]}>{entry.frame.beaconType}</Text>
+    <View style={[s.tableBadges, { width: widths[3] }]}>
+      <View style={s.tableModeIcon}><ModeIcon mode={entry.frame.mode} /></View>{!compact && headerBadge(entry.frame)}
+    </View>
+    <Text style={[s.td, s.mono, { width: widths[4] }]}>{frameMhz(entry)}</Text>
+    <Text style={[s.td, s.mono, { width: widths[5] }]}>{locator}</Text>
+    <View style={[s.tableBadges, { width: widths[6] }]}>{bchBadges(entry.frame, true)}</View>
+  </Pressable>;
+});
 const FrameTable = memo(function FrameTable({ entries, active, select, compact = false, filtered = false }: {
   entries: Entry[]; active: Entry | undefined; select: (id: number) => void; compact?: boolean; filtered?: boolean;
 }) {
-  const rows = useRef<ComponentRef<typeof ScrollView>>(null);
-  const layouts = useRef(new Map<number, { y: number; height: number }>());
+  const rows = useRef<FlatList<{ entry: Entry; locator: string; index: number }>>(null);
   const viewport = useRef({ y: 0, height: 0 });
   const [glyphWidth, setGlyphWidth] = useState(7);
   const revealSelection = () => {
-    const layout = active && layouts.current.get(active.id);
-    if (!layout || !viewport.current.height) return;
+    const index = entries.findIndex(entry => entry.id === active?.id);
+    if (index < 0 || !viewport.current.height) return;
+    const top = (entries.length - 1 - index) * frameRowHeight;
     const { y, height } = viewport.current;
-    const target = layout.y < y ? layout.y :
-      layout.y + layout.height > y + height ? layout.y + layout.height - height : y;
+    const target = top < y ? top : top + frameRowHeight > y + height ? top + frameRowHeight - height : y;
     viewport.current.y = Math.max(0, target);
-    rows.current?.scrollTo({ y: viewport.current.y, animated: false });
+    rows.current?.scrollToOffset({ offset: viewport.current.y, animated: false });
   };
   useEffect(() => {
-    const ids = new Set(entries.map(entry => entry.id));
-    for (const id of layouts.current.keys()) if (!ids.has(id)) layouts.current.delete(id);
     revealSelection();
   }, [active?.id, entries]);
-  const headers = ["Received", "Gen.", "Type", "Mode", "MHz", "Locator", "BCH"];
-  const tableRows = entries.map(entry => {
+  const tableRows = useMemo(() => entries.map((entry, index) => {
     const locator = beaconLocator(entry.frame)?.slice(0, 8) ?? "—";
     const values = ["00:00:00.000", entry.frame.generation === 1 ? "FGB" : "SGB", entry.frame.beaconType, "", frameMhz(entry), locator];
     if (!compact && entry.frame.headerErrors) values[3] = `HEADER ${entry.frame.headerErrors} bits mismatch`;
-    return { entry, locator, values, bch: entry.frame.bch.map((_, n) => bchStatus(entry.frame, n, true).text) };
-  });
-  const widths = headers.map((header, n) => {
-    const values = n === headers.length - 1 ? tableRows.flatMap(row => row.bch) : tableRows.map(row => row.values[n]);
-    const badgePadding = n === headers.length - 1 || (!compact && n === 3 && entries.some(entry => entry.frame.headerErrors)) ? 12 : 0;
+    return { entry, index, locator, values, bch: entry.frame.bch.map((_, n) => bchStatus(entry.frame, n, true).text) };
+  }).reverse(), [entries, compact]);
+  const widths = useMemo(() => frameTableHeaders.map((header, n) => {
+    const values = n === frameTableHeaders.length - 1 ? tableRows.flatMap(row => row.bch) : tableRows.map(row => row.values[n]);
+    const badgePadding = n === frameTableHeaders.length - 1 || (!compact && n === 3 && entries.some(entry => entry.frame.headerErrors)) ? 12 : 0;
     return Math.ceil(Math.max(header.length, ...values.map(value => value.length)) * glyphWidth + 18 + badgePadding);
-  });
+  }), [tableRows, glyphWidth, compact]);
+  const renderRow = useCallback(({ item }: { item: { entry: Entry; locator: string; index: number } }) =>
+    <FrameRow {...item} widths={widths} selected={active?.id === item.entry.id} compact={compact} select={select} />,
+  [widths, active?.id, compact, select]);
   return <View style={s.fill} accessibilityLabel="Received frames">
     <Text aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
       style={s.tableMeasure} onLayout={event => setGlyphWidth(event.nativeEvent.layout.width / 10)}>0000000000</Text>
     {!entries.length ? <View style={s.emptyPane}><Text style={s.emptyStrong}>{filtered ? "All frames are filtered" : "No frames received"}</Text>
       <Text style={s.empty}>{filtered ? "Change display filters in Settings to show stored frames." : "Start the receiver or play an I/Q capture."}</Text></View> :
       <ScrollView horizontal style={s.fill} contentContainerStyle={{ minWidth: "100%" }}>
-        <View style={{ minWidth: "100%", flex: 1 }}>
-          <View style={[s.tr, s.th]}>{headers.map((name, n) =>
+        <View style={{ minWidth: "100%", width: widths.reduce((a, b) => a + b, 0), flex: 1 }}>
+          <View style={[s.tr, s.th]}>{frameTableHeaders.map((name, n) =>
             <Text key={name} style={[s.thText, s.mono, { width: widths[n] }]}>{name}</Text>)}</View>
-          <ScrollView ref={rows} style={s.fill} nestedScrollEnabled accessibilityLabel="Frame rows"
+          <FlatList ref={rows} data={tableRows} renderItem={renderRow} keyExtractor={item => String(item.entry.id)}
+            extraData={active?.id} style={s.fill} nestedScrollEnabled accessibilityLabel="Frame rows"
+            initialNumToRender={8} maxToRenderPerBatch={8} windowSize={3}
+            initialScrollIndex={Math.max(0, tableRows.findIndex(row => row.entry.id === active?.id))}
+            getItemLayout={(_, index) => ({ length: frameRowHeight, offset: index * frameRowHeight, index })}
             onScroll={event => { viewport.current.y = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={16}
-            onLayout={event => { viewport.current.height = event.nativeEvent.layout.height; revealSelection(); }}
-            onContentSizeChange={revealSelection}>
-            {[...tableRows].reverse().map(({ entry, locator }) => <Pressable key={entry.id} accessibilityRole="button"
-              accessibilityLabel={`Select frame ${entries.indexOf(entry) + 1}`}
-              accessibilityHint={`Mode: ${modeLabel(entry.frame.mode)}`}
-              accessibilityState={{ selected: active?.id === entry.id }} onPress={() => select(entry.id)}
-              onLayout={event => {
-                layouts.current.set(entry.id, event.nativeEvent.layout);
-                if (active?.id === entry.id) revealSelection();
-              }}
-              style={[s.tr, active?.id === entry.id && { backgroundColor: "#004444" }]}>
-              <Text style={[s.td, s.mono, { width: widths[0] }]}>
-                {new Date(entry.received).toLocaleDateString("en-GB")}{"\n"}
-                {new Date(entry.received).toLocaleTimeString("en-GB", { hour12: false })}.{entry.received.slice(20, 23)}
-              </Text>
-              <Text style={[s.td, s.mono, { width: widths[1] }]}>{entry.frame.generation === 1 ? "FGB" : "SGB"}</Text>
-              <Text style={[s.td, s.mono, { width: widths[2] }]}>{entry.frame.beaconType}</Text>
-              <View style={[s.tableBadges, { width: widths[3], paddingHorizontal: 9 }]}>
-                <View style={s.tableModeIcon}><ModeIcon mode={entry.frame.mode} /></View>{!compact && headerBadge(entry.frame)}</View>
-              <Text style={[s.td, s.mono, { width: widths[4] }]}>{frameMhz(entry)}</Text>
-              <Text style={[s.td, s.mono, { width: widths[5] }]}>{locator}</Text>
-              <View style={[s.tableBadges, { width: widths[6] }]}>{bchBadges(entry.frame, true)}</View>
-            </Pressable>)}
-          </ScrollView>
+            onLayout={event => { viewport.current.height = event.nativeEvent.layout.height; revealSelection(); }} />
         </View>
       </ScrollView>}
   </View>;
@@ -465,6 +497,10 @@ function CompactFrameDetails({ entry }: { entry: Entry }) {
       <View style={s.summaryBase} onLayout={event => recordBase(1, event.nativeEvent.layout.height)}>
         <View style={s.summaryControl}><Text style={s.summaryLabel}>Control:</Text>{bchBadges(entry.frame, true)}{headerBadge(entry.frame)}</View>
         <Text style={s.summaryLine}><Text style={s.summaryLabel}>Hex ID: </Text>{summary.hexId ?? "Not available"}</Text>
+        {entry.frame.generation === 1 && <View>
+          <Text style={s.summaryLabel}>Data:</Text>
+          <Text selectable style={[s.summaryLine, s.mono]}>{entry.frame.correctedHex}</Text>
+        </View>}
         {summary.serial && <Text style={s.summaryLine}><Text style={s.summaryLabel}>Serial#: </Text>{summary.serial}</Text>}
         <Text style={s.summaryLine}><Text style={s.summaryLabel}>Main location device: </Text>{formatFieldFrequencies(summary.mainDevice ?? "Not available")}</Text>
         <Text style={s.summaryLine}><Text style={s.summaryLabel}>Aux. location device: </Text>{formatFieldFrequencies(summary.auxDevice ?? "Not available")}</Text>
@@ -534,9 +570,7 @@ const MapPanel = memo(function MapPanel({ entry, compact = false }: { entry: Ent
   const [linkError, setLinkError] = useState("");
   const position = entry && beaconPosition(entry.frame);
   async function shareLink(name: string, url: string) {
-    if (Platform.OS !== "web") { await Share.share({ title: name, message: url }); return; }
-    if (!navigator.share) throw new Error("Sharing is unavailable in this browser. Use Copy URL.");
-    await navigator.share({ title: name, url });
+    await shareContent(url, true);
   }
   const report = (reason: unknown) => {
     if (!(reason instanceof Error && reason.name === "AbortError")) setLinkError(String(reason));
@@ -574,15 +608,26 @@ const MapPanel = memo(function MapPanel({ entry, compact = false }: { entry: Ent
 });
 function OfficialDetail({ entry }: { entry: Entry | undefined }) {
   const [error, setError] = useState("");
+  const [sharing, setSharing] = useState(false);
   if (!entry) return <Text style={s.empty}>No frame selected.</Text>;
   const url = `https://decoder2.herokuapp.com/decoded/${encodeURIComponent(entry.frame.correctedHex)}`;
+  const report = (reason: unknown) => {
+    if (!(reason instanceof Error && reason.name === "AbortError")) setError(String(reason));
+  };
   return <>
     <View style={s.row}>
       <Text style={[s.h3, s.fill]}>OFFICIAL COSPAS-SARSAT DECODER</Text>
       <Button title="Open in browser" icon={ExternalLink} onPress={() => {
         void Linking.openURL(url).catch(reason => setError(String(reason)));
       }} />
+      <Button title="Share" icon={Share2} onPress={() => { setError(""); setSharing(true); }} />
     </View>
+    {sharing && <ActionPopup title="Share frame" close={() => setSharing(false)} actions={[
+      { label: "Copy Data", icon: Copy, run: () => { void copyText(entry.frame.correctedHex).catch(report); } },
+      { label: "Copy URL", icon: Copy, run: () => { void copyText(url).catch(report); } },
+      { label: "Share Data", icon: Share2, run: () => { void shareContent(entry.frame.correctedHex).catch(report); } },
+      { label: "Share URL", icon: Share2, run: () => { void shareContent(url, true).catch(report); } },
+    ]} />}
     {error !== "" && <Text accessibilityRole="alert" style={s.errorText}>{error}</Text>}
     <OfficialDecoder url={url} onError={setError} />
   </>;
@@ -624,6 +669,7 @@ export default function App() {
   const [session, setSession] = useState<{ source: "rtl" | "sample"; centerHz: number; sampleRateHz: number; durationSeconds: number | null; noisePrerollMs?: number } | null>(null);
   const [epoch, setEpoch] = useState(0);
   const [center, setCenter] = useState(406.05);
+  const [receiverHeight, setReceiverHeight] = useState(0);
   const [gain, setGain] = useState(8);
   const [agc, setAgc] = useState(true);
   const [device, setDevice] = useState("");
@@ -752,6 +798,13 @@ export default function App() {
     return true;
   }
   function stop() { transport?.send({ type: "stop" }); }
+  function tuneCenter(mhz: number) {
+    setError("");
+    if (mhz === center) return;
+    setCenter(mhz);
+    if (busy) transport?.send({ type: "retune", centerHz: Math.round(mhz * 1e6) });
+    else { setSession(null); setLine(null); setChannels([]); setEpoch(value => value + 1); }
+  }
   function toggleReceiver() {
     if (receiverActionPending.current) return;
     receiverActionPending.current = true;
@@ -803,7 +856,7 @@ export default function App() {
       { label: "Clear all frames", icon: Eraser, kind: "stop", run: () => { setEntries([]); setSelected(null); } },
     ]} />}
     <View style={s.titlebar}><View style={s.brand}><RadioTower size={28} color="#3fe6e6" /><Text style={s.brandStrong}>SarsatSDR</Text>
-      <Text style={s.brandSpan}>COSPAS-SARSAT · 406.000 MHz · FGB / SGB</Text></View>
+      <Text style={s.brandSpan}>COSPAS-SARSAT · {((session?.centerHz ?? center * 1e6) / 1e6).toFixed(3)} MHz · FGB / SGB</Text></View>
       <View style={s.row}>
         <View style={s.row}><Led tone={connected ? "green" : undefined} /><Text style={s.connection}>
           {connected ? Platform.OS === "web" ? "CONNECTED" : "ONLINE" : "OFFLINE"} · RTL-SDR</Text></View>
@@ -836,49 +889,62 @@ export default function App() {
     </View>}
     {tab === "Map" && <View style={s.fixedPage}><MapPanel entry={activeFrame} /></View>}
     {tab === "Detail" && <View style={s.fixedPage}><OfficialDetail key={activeFrame?.id} entry={activeFrame} /></View>}
-    {(tab === "Receiver" || tab === "Player" || tab === "Signal" || tab === "Settings") &&
-    <ScrollView style={s.fill} contentContainerStyle={{ paddingBottom: 12 }}>
-        {tab === "Player" && <View style={s.panel}><Text style={s.h2}>Player <Text style={s.h2Small}>Native I/Q capture playback</Text></Text>
-          <View style={s.row}>
-            <Select label="WAV capture" disabled={busy} value={sample} onChange={setSample}
+    {tab === "Player" && <View style={s.fixedPage}>
+      <View style={[s.split, { padding: 0 }]}>
+        <View style={{ flex: 3, minWidth: 0 }}>{spectrum(true)}</View>
+        <View style={s.sideControls}>
+          <Text style={[s.h2, { marginBottom: 0 }]}>Player</Text>
+            <Select narrow label="WAV capture" disabled={busy} value={sample} onChange={setSample}
               items={(info?.samples ?? []).map(name => ({ label: name, value: name }))} />
             {transport?.pickFile && <Button icon={FolderOpen} title="OPEN WAV…" disabled={busy} onPress={() => { void pick(); }} />}
             <Check label="Validated capture profile" value={useSampleProfile} disabled={busy} onChange={setUseSampleProfile} />
             <Check label="Explicit DC removal" value={useSampleProfile ? playback?.removeDc ?? false : removeDc}
               disabled={busy || useSampleProfile} onChange={setRemoveDc} />
-            <NumberField label="Noise preroll · ms" disabled={busy || useSampleProfile}
+            <NumberField style={{ flexShrink: 1 }} label="Noise preroll · ms" disabled={busy || useSampleProfile}
               value={useSampleProfile ? playback?.noisePrerollMs ?? 0 : preroll} onChange={setPreroll} />
-            <Button kind="primary" icon={Play} title="PLAY" disabled={busy || !connected || !settings || !preferencesReady} onPress={() => start("sample")} />
-            <Button icon={Square} title="STOP" disabled={!busy} onPress={stop} />
-          </View>
-          <View accessibilityLabel="Capture progress" style={s.progress}>
-            <View style={[s.progressBar, { width: `${Math.min(100, Math.min(elapsed, duration) / duration * 100)}%` }]} /></View>
-          {useSampleProfile ? playback ? <Text style={s.p}>Active profile: {playback.settings.fgb ? "FGB" : ""}{playback.settings.fgb && playback.settings.sgb ? " + " : ""}{playback.settings.sgb ? "SGB" : ""}.
-            {playback.settings.fgb && ` OverPeak ${playback.settings.fgbOverPeakDb} dB; average ${playback.settings.fgbAverage}; RunTime ${playback.settings.fgbRuntimeMs} ms; Alpha ${playback.settings.fgbAlpha}; Beta ${playback.settings.fgbBeta}; Zeta ${playback.settings.fgbZeta}; max BCH-1 errors ${playback.settings.fgbMaxErrors}; max BCH-2 errors ${playback.settings.fgbBch2MaxErrors}; max header errors ${playback.settings.fgbHeaderErrors}.`}
+            <View style={s.row}>
+              <View style={s.fill}><Button kind="primary" icon={Play} title="PLAY" disabled={busy || !connected || !settings || !preferencesReady} onPress={() => start("sample")} /></View>
+              <View style={s.fill}><Button icon={Square} title="STOP" disabled={!busy} onPress={stop} /></View>
+            </View>
+          {useSampleProfile ? playback ? <Text style={[s.p, { fontSize: 10, lineHeight: 14, marginTop: 4 }]}>
+            Active profile: {playback.settings.fgb ? "FGB" : ""}{playback.settings.fgb && playback.settings.sgb ? " + " : ""}{playback.settings.sgb ? "SGB" : ""}
+            {playback.settings.fgb && `\nOverPeak ${playback.settings.fgbOverPeakDb} dB · Avg ${playback.settings.fgbAverage}` +
+              `\nRunTime ${playback.settings.fgbRuntimeMs} ms` +
+              `\nPLL Alpha ${playback.settings.fgbAlpha} · Beta ${playback.settings.fgbBeta} · Zeta ${playback.settings.fgbZeta}` +
+              `\nMax errors: BCH-1 ${playback.settings.fgbMaxErrors} · BCH-2 ${playback.settings.fgbBch2MaxErrors} · Header ${playback.settings.fgbHeaderErrors}`}
             </Text>
             : info ? <Text style={[s.p, { color: "#ff8484" }]}>No validated profile. Select manual mode.</Text>
             : <Text style={s.p}>Loading capture profiles...</Text>
-            : <Text style={s.p}>Manual mode: DSP settings from Settings, DC removal and noise preroll above.</Text>}
-          </View>}
-      {(tab === "Receiver" || tab === "Player") && spectrum()}
-      {tab === "Receiver" && <>
-        <View style={s.displayControls}>
-          <Range label="FFT Average" value={average} min={.01} max={.99} step={.01} onChange={setAverage} digits={2} />
-          <Check label="WF Auto" value={waterfallAutomatic} onChange={setWaterfallAutomatic} />
-          <Range label="WF Base" value={base} min={0} max={100} step={1} onChange={setBase} disabled={waterfallAutomatic} />
-          <Range label="WF Range" value={range} min={0} max={100} step={1} onChange={setRange} disabled={waterfallAutomatic} />
-          <Range label={`WF Duration: ${(7 / waterfallSpeed).toFixed(1)} s · Speed`} value={waterfallSpeed} min={.25} max={4} step={.25}
-            onChange={setWaterfallSpeed} digits={2} />
+            : <Text numberOfLines={2} style={s.p}>Manual mode: DSP settings from Settings.</Text>}
         </View>
-        <View style={s.toolbar}>
-        <NumberField label="Center · MHz" value={Number(center).toFixed(3)} onChange={setCenter} disabled={busy} big />
-        <View style={[s.fieldset, decoderLocked && { opacity: .6 }]}><Text style={s.legend}>DECODERS</Text><View style={s.row}>
-          <Check label="FGB" value={displayedSettings?.fgb ?? false} disabled={decoderLocked} onChange={value => change("fgb", value)} />
-          <Check label="SGB" value={displayedSettings?.sgb ?? false} disabled={decoderLocked} onChange={value => change("sgb", value)} />
-          <Check label="Normal PRN" value={displayedSettings?.normalPrn ?? false} disabled={decoderLocked} onChange={value => change("normalPrn", value)} />
-          <Check label="Self Test PRN" value={displayedSettings?.testPrn ?? false} disabled={decoderLocked} onChange={value => change("testPrn", value)} />
-        </View></View>
       </View>
+      <View accessibilityLabel="Capture progress" style={s.progress}>
+        <View style={[s.progressBar, { width: `${Math.min(100, Math.min(elapsed, duration) / duration * 100)}%` }]} />
+      </View>
+    </View>}
+    {(tab === "Receiver" || tab === "Signal" || tab === "Settings") &&
+    <ScrollView key={tab} style={s.fill} contentContainerStyle={{ paddingBottom: 12 }}
+      onLayout={tab === "Receiver" ? event => setReceiverHeight(event.nativeEvent.layout.height) : undefined}>
+      {tab === "Receiver" && <>
+        <View style={[s.split, { flex: undefined, height: receiverHeight || 500 }]}>
+          <View style={{ flex: 3, minWidth: 0 }}>{spectrum(true)}</View>
+          <ScrollView style={s.sideControls} contentContainerStyle={{ gap: 6 }} nestedScrollEnabled>
+          <CenterFrequency value={center} onChange={tuneCenter} onError={setError}
+            disabled={!settings || (busy && (session?.source !== "rtl" || status !== "running"))} />
+          <View style={[s.fieldset, decoderLocked && { opacity: .6 }]}><Text style={s.legend}>DECODERS</Text><View style={s.row}>
+            <Check label="FGB" value={displayedSettings?.fgb ?? false} disabled={decoderLocked} onChange={value => change("fgb", value)} />
+            <Check label="SGB" value={displayedSettings?.sgb ?? false} disabled={decoderLocked} onChange={value => change("sgb", value)} />
+            <Check label="Normal PRN" value={displayedSettings?.normalPrn ?? false} disabled={decoderLocked} onChange={value => change("normalPrn", value)} />
+            <Check label="Self Test PRN" value={displayedSettings?.testPrn ?? false} disabled={decoderLocked} onChange={value => change("testPrn", value)} />
+          </View></View>
+          <Range stacked label="FFT Average" value={average} min={.01} max={.99} step={.01} onChange={setAverage} digits={2} />
+          <Check label="WF Auto" value={waterfallAutomatic} onChange={setWaterfallAutomatic} />
+          <Range stacked label="WF Base" value={base} min={0} max={100} step={1} onChange={setBase} disabled={waterfallAutomatic} />
+          <Range stacked label="WF Range" value={range} min={0} max={100} step={1} onChange={setRange} disabled={waterfallAutomatic} />
+          <Range stacked label={`WF Duration: ${(7 / waterfallSpeed).toFixed(1)} s · Speed`} value={waterfallSpeed} min={.25} max={4} step={.25}
+            onChange={setWaterfallSpeed} digits={2} />
+          </ScrollView>
+        </View>
       <View style={s.readouts}>
         <Readout label="RECEIVER STATUS">{status.toUpperCase()}</Readout>
         <Readout label="SOURCE">{session ? session.source === "rtl" ? "RTL-SDR · USB" : "WAV I/Q" : "—"}</Readout>
@@ -1010,6 +1076,8 @@ const s = StyleSheet.create({
   split: { flex: 1, minHeight: 0, flexDirection: "row", padding: 8, gap: 8 },
   splitColumn: { flex: 1, minWidth: 0, minHeight: 0, borderWidth: 1, borderColor: "#003333", borderRadius: 8, overflow: "hidden" },
   fixedPage: { flex: 1, minHeight: 0, padding: 8 },
+  sideControls: { flex: 1, minWidth: 0, minHeight: 0, padding: 10, gap: 6, backgroundColor: "#001a1a",
+    borderWidth: 1, borderColor: "#003333", borderRadius: 8 },
   detailPane: { flex: 1, minHeight: 0, padding: 10, backgroundColor: "#001a1a", overflow: "hidden" },
   fullDetail: { padding: 10, backgroundColor: "#001a1a" },
   frameHeader: { flexDirection: "row", alignItems: "center", marginBottom: 8 },

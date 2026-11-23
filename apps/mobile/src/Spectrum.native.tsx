@@ -52,6 +52,9 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
   sgbDetections: number; fgbDetections: number;
   compact?: boolean;
 }) {
+  const startHz = line?.startHz ?? centerHz - 50000;
+  const bandwidthHz = line ? line.binWidthHz * line.dbfs.length : 100000;
+  const frequencyLabel = (fraction: number) => ((startHz + fraction * bandwidthHz) / 1e6).toFixed(3);
   const [fftSize, setFftSize] = useState({ width: 0, height: 0 });
   const [compactWaterfallHeight, setCompactWaterfallHeight] = useState(0);
   const { width } = fftSize;
@@ -154,9 +157,9 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     return { stroke: path.detach(), area: area.detach() };
   }, [trace, width, calibrationDb, fftHeight, top]);
 
-  return <View style={[styles.scope, compact && styles.compactScope]} accessibilityLabel="Spectrum and waterfall 406 to 406.100 MHz">
+  return <View style={[styles.scope, compact && styles.compactScope]} accessibilityLabel={`Spectrum and waterfall ${frequencyLabel(0)} to ${frequencyLabel(1)} MHz`}>
     <View style={[styles.title, compact && { flexDirection: "column", gap: 4, paddingVertical: 5, paddingHorizontal: 4 }]}>
-      {!compact && <Text style={[styles.titleText, compact && { flex: 0 }]}>FFT  406.000 — 406.100 MHz</Text>}
+      {!compact && <Text style={[styles.titleText, compact && { flex: 0 }]}>FFT  {frequencyLabel(0)} — {frequencyLabel(1)} MHz</Text>}
       <View style={{ flexDirection: "row" }}>
         <DetectionActivity generation="FGB" detections={fgbDetections} />
         <DetectionActivity generation="SGB" detections={sgbDetections} />
@@ -176,7 +179,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
           <SkiaText key={db} x={4} y={ordinate(db) + 4} text={String(db)} font={font} color={colors.labels} />)}
         {width > 0 && (compact ? [0, 5, 10] : Array.from({ length: 11 }, (_, n) => n)).map(n =>
           <SkiaText key={n} x={Math.max(40, Math.min(width - 49, abscissa(n / 10) - 20))} y={fftHeight - 4}
-            text={(406 + n / 100).toFixed(3)} font={font} color={colors.labels} />)}
+            text={frequencyLabel(n / 10)} font={font} color={colors.labels} />)}
         {trace.length ? <Path path={spectrum.stroke} style="stroke" color={colors.trace} strokeWidth={1} />
           : <SkiaText x={55} y={30} text="Waiting for an I/Q stream" font={font} color={colors.labels} />}
         {trace.length > 0 && channels.map(channel => {
@@ -184,8 +187,8 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
           const held = markerLevels.current.get(channel.channel)?.level;
           if (held === undefined) return null;
           const level = held + calibrationDb;
-          if (frequency < 406000000 || frequency > 406100000 || level < fftMinDb) return null;
-          return <Circle key={channel.channel} cx={abscissa((frequency - 406000000) / 100000)} cy={ordinate(level)} r={5}
+          if (frequency < startHz || frequency > startHz + bandwidthHz || level < fftMinDb) return null;
+          return <Circle key={channel.channel} cx={abscissa((frequency - startHz) / bandwidthHz)} cy={ordinate(level)} r={5}
             color={candidateColors[channel.channel]} />;
         })}
       </Canvas>
@@ -198,7 +201,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
       <Waterfall frame={frame} width={Math.max(0, plot)} speed={speed} height={waterfallHeight} />
     </View>
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    {!compact && <><View style={styles.foot}>{["406.000 MHz", "406.050 MHz", "406.100 MHz"].map(text =>
+    {!compact && <><View style={styles.foot}>{[0, .5, 1].map(f => `${frequencyLabel(f)} MHz`).map(text =>
       <Text key={text} style={styles.footText}>{text}</Text>)}</View>
     <Text style={[styles.legendText, { paddingHorizontal: 12, paddingVertical: 6 }]}>
       {automatic ? `WF Auto · noise ${noiseFloor === null ? "—" : (noiseFloor + calibrationDb).toFixed(1)} ${relative ? "relative dB" : "dBm"} · 18 dB color span`

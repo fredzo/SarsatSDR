@@ -1,6 +1,6 @@
 import * as DocumentPicker from "expo-document-picker";
 import { AppState } from "react-native";
-import { infoSchema, playbackProfilesSchema, settingsSchema, startSchema } from "@sarsat/shared/protocol";
+import { infoSchema, playbackProfilesSchema, retuneSchema, settingsSchema, startSchema } from "@sarsat/shared/protocol";
 import { SessionCore, type EngineHandlers } from "@sarsat/shared/session-core";
 import SarsatNative from "../modules/sarsat-native";
 import type { Transport, TransportHandlers } from "./transport-types";
@@ -54,6 +54,7 @@ export function createTransport(handlers: TransportHandlers): Transport {
     send(command) {
       try {
         if (command.type === "stop") return core.stop();
+        if (command.type === "retune") return core.retune(retuneSchema.parse(command).centerHz);
         const start = startSchema.parse(command);
         if (start.source === "sample" && start.sample && !picked.has(start.sample)) {
           handlers.event({ type: "status", status: "starting" });

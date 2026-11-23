@@ -35,6 +35,18 @@ int main() {
             position += count;
         }
         if (lines != 5) throw std::runtime_error("Spectrum publication depends on caller chunk boundaries");
+        for (const double center : {100000000., 145825123., 999000000.}) {
+            std::size_t shifted_lines = 0;
+            cospas::cli::Spectrum shifted(921600, center + 70000, [&](const auto& line, double, float) {
+                ++shifted_lines;
+                const auto peak = std::max_element(line.begin(), line.end());
+                const auto frequency = center - 50000 + (double(peak - line.begin()) + .5) * 100000 / 1024;
+                if (std::abs(frequency - center - 81.25) > 50 || std::abs(*peak + .726167f) > .03f)
+                    throw std::runtime_error("Spectrum did not follow the retuned center frequency");
+            }, center);
+            shifted.push(input);
+            if (shifted_lines != 5) throw std::runtime_error("Missing retuned spectra");
+        }
         const auto offset = 20 * std::log10(128 * 2048 * .42) - 190.8;
         if (std::abs(cospas::cli::spectrum_display_offset_db(0) - offset) > .0001 ||
             std::abs(cospas::cli::spectrum_display_offset_db(8) - offset - 78) > .0001 ||

@@ -71,6 +71,7 @@ sockets.on("connection", (client: WebSocket) => {
     try {
       const command = commandSchema.parse(JSON.parse(data.toString()));
       if (command.type === "stop") session.stop();
+      else if (command.type === "retune") session.retune(command.centerHz);
       else session.start(command);
     } catch (error) {
       send(client, { type: "error", message: error instanceof Error ? error.message : String(error) });

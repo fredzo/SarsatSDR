@@ -145,10 +145,10 @@ void emit_acquisition(const cs_result* result) {
 }
 
 void emit_spectrum(const cospas::cli::Spectrum::Line& line, double time, std::size_t gain_index = 0,
-                   float bandwidth_level = std::numeric_limits<float>::quiet_NaN()) {
+                   float bandwidth_level = std::numeric_limits<float>::quiet_NaN(), double center_hz = 406050000) {
     if (time <= 0) return;
-    std::cout << std::setprecision(8) << "{\"type\":\"spectrum\",\"timeSeconds\":" << time
-              << ",\"startHz\":406000000,\"binWidthHz\":97.65625,\"displayOffsetDb\":"
+    std::cout << std::setprecision(12) << "{\"type\":\"spectrum\",\"timeSeconds\":" << time
+              << ",\"startHz\":" << center_hz - 50000 << ",\"binWidthHz\":97.65625,\"displayOffsetDb\":"
               << cospas::cli::spectrum_display_offset_db(gain_index) << ",\"fullBandwidthDbm\":";
     if (std::isfinite(bandwidth_level))
         std::cout << bandwidth_level + cospas::cli::spectrum_display_offset_db(gain_index);
@@ -271,7 +271,7 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
         " --frequency-hz N --gain-index N [--seconds N] [--agc] [--json]\n" +
         (decoding ? "  Live FGB/SGB decoding, F_DSP offset and PLL correction. Bias-T forced off.\n"
                   : "  Diagnostic I/Q acquisition only. Bias-T forced off.\n") +
-        "  --frequency-hz N       Required, 406000000..406100000 Hz\n"
+        "  --frequency-hz N       Required, 100000000..999000000 Hz\n"
         "  --gain-index N         Required initial preset, 0..11\n"
         "  --seconds N            Acquisition duration, >0..30 s (default 2)\n"
         "  --agc                  Enable FE_AGC (default manual gain)\n"
@@ -310,8 +310,8 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
         else if (arg == "--json") {}
         else throw std::invalid_argument("Unknown or incomplete " + label + " option: " + std::string(arg));
     }
-    if (frequency < 406000000 || frequency > 406100000)
-        throw std::invalid_argument(label + " requires --frequency-hz within 406000000..406100000");
+    if (frequency < 100000000 || frequency > 999000000)
+        throw std::invalid_argument(label + " requires --frequency-hz within 100000000..999000000");
     if (!gain || *gain < 0 || *gain > 11)
         throw std::invalid_argument(label + " requires --gain-index within 0..11");
     if (!(seconds > 0) || seconds > 30)
@@ -347,7 +347,7 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
     if (events) spectrum = std::make_unique<cospas::cli::Spectrum>(
         cospas::rtl_sample_rate_hz, *status.actual_frequency_hz,
         [&](const auto& line, double time, float bandwidth_level) {
-            emit_spectrum(line, time, spectrum_gain, bandwidth_level);
+            emit_spectrum(line, time, spectrum_gain, bandwidth_level, frequency);
         }, frequency);
     std::unique_ptr<cs_worker, decltype(&cs_worker_destroy)> worker(nullptr, cs_worker_destroy);
     cs_diagnostics diagnostics{};

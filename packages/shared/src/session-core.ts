@@ -1,4 +1,4 @@
-import { nativeEventSchema, type ServerEvent, type StartCommand } from "./protocol";
+import { nativeEventSchema, retuneSchema, type ServerEvent, type StartCommand } from "./protocol";
 
 export function argumentsFor(command: StartCommand, samples: string[], samplePath: (sample: string) => string): string[] {
   const s = command.settings;
@@ -52,12 +52,15 @@ export class SessionCore {
   private engine: EngineProcess | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private retry: ReturnType<typeof setTimeout> | null = null;
+  private command: StartCommand | null = null;
+  private pendingRetune: StartCommand | null = null;
   constructor(private readonly launch: EngineLauncher, private readonly sampleList: () => string[],
     private readonly samplePath: (sample: string) => string, private readonly emit: (event: ServerEvent) => void) {}
 
   start(command: StartCommand) {
     if (this.engine || this.retry) throw new Error("Session already active; stop before changing the source or settings");
     const args = argumentsFor(command, this.sampleList(), this.samplePath);
+    this.command = command;
     this.status = "starting";
     this.lastSession = null;
     this.emit({ type: "status", status: this.status });
@@ -96,6 +99,12 @@ export class SessionCore {
         this.timer = null;
         this.engine = null;
         const message = stderr.trim();
+        const retune = this.pendingRetune;
+        this.pendingRetune = null;
+        if (retune && terminal && (code === 0 || code === 2)) {
+          this.start(retune);
+          return;
+        }
         if (this.status !== "stopping" && command.source === "rtl" &&
             (message.includes("RTL-SDR I/Q acquisition queue full; sample continuity lost") ||
              message.includes("Worker input queue is full; block was not accepted"))) {
@@ -117,6 +126,19 @@ export class SessionCore {
     });
   }
   stop() {
+    this.pendingRetune = null;
+    this.requestStop();
+  }
+  retune(centerHz: number) {
+    retuneSchema.parse({ type: "retune", centerHz });
+    if (!this.command || this.command.source !== "rtl" || this.status === "idle")
+      throw new Error("Retuning requires an active RTL-SDR session");
+    const command = { ...this.command, centerHz };
+    if (this.retry) { this.stop(); this.start(command); return; }
+    this.pendingRetune = command;
+    this.requestStop();
+  }
+  private requestStop() {
     if (this.retry) {
       clearTimeout(this.retry);
       this.retry = null;

@@ -24,7 +24,7 @@
 namespace cospas::cli {
 struct Spectrum::Impl {
     Impl(std::uint32_t sample_rate, double frequency, Callback sink, double dsp_center)
-        : rate(sample_rate), center(frequency), callback(std::move(sink)),
+        : rate(sample_rate), center(frequency), display_start(dsp_center - 50000), callback(std::move(sink)),
           size(std::bit_ceil(static_cast<unsigned>(std::ceil(double(rate) / 56.25)))),
           ring(size), input(size), output(size), window(size), response_db(size), bandwidth_response(size) {
         for (std::size_t n = 0; n < size / 2; ++n) {
@@ -54,6 +54,7 @@ struct Spectrum::Impl {
     ~Impl() { fftwf_destroy_plan(plan); }
     std::uint32_t rate;
     double center;
+    double display_start;
     Callback callback;
     std::size_t size;
     std::vector<std::complex<float>> ring, input, output;
@@ -93,7 +94,7 @@ void Spectrum::sample(std::complex<float> value) {
         : std::numeric_limits<float>::quiet_NaN();
     Line line{};
     for (std::size_t n = 0; n < line.size(); ++n) {
-        const double offset = 406000000 + (double(n) + .5) * 100000 / double(line.size()) - s.center;
+        const double offset = s.display_start + (double(n) + .5) * 100000 / double(line.size()) - s.center;
         if (std::abs(offset) >= double(s.rate) / 2) {
             line[n] = std::numeric_limits<float>::quiet_NaN();
             continue;

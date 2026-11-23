@@ -100,7 +100,13 @@ test("UI command validation preserves native defaults and constrains sample acce
   assert.equal(args[args.indexOf("--sgb-threshold") + 1], String(settings.sgbThreshold));
   assert.throws(() => argumentsFor({ ...command, sample: "..\\outside\\unexpected.exe" }, ["sgb.wav"], root));
   assert.equal(startSchema.safeParse({ ...command, settings: { ...settings, fgb: false, sgb: false } }).success, false);
-  assert.equal(startSchema.safeParse({ ...command, centerHz: 407000000 }).success, false);
+  for (const centerHz of [100000000, 145825123, 407000000, 999000000]) {
+    const tuned = startSchema.parse({ ...command, source: "rtl", centerHz });
+    const args = argumentsFor(tuned, [], root);
+    assert.equal(args[args.indexOf("--frequency-hz") + 1], String(centerHz));
+  }
+  for (const centerHz of [99999999, 999000001, 145825123.5])
+    assert.equal(startSchema.safeParse({ ...command, centerHz }).success, false);
   assert.equal(startSchema.safeParse({ ...command, bus: 1 }).success, false);
   assert.equal(startSchema.safeParse({ ...command, settings: { ...settings, sgbThreshold: 513 } }).success, false);
   assert.equal(startSchema.safeParse({ ...command, settings: { ...settings, sgbThreshold: 0 } }).success, true);
@@ -125,6 +131,55 @@ test("UI command validation preserves native defaults and constrains sample acce
     { sgbMaxErrors: 7 }, { searchDepth: 2 },
     { searchDepth: 10 }, { searchDepth: 3.5 }, { fgbMaxErrors: 1.5 }, { fgbHeaderErrors: 4 }, { fgbHeaderErrors: 1.5 }, { fgbBch2MaxErrors: 3 }])
     assert.equal(startSchema.safeParse({ ...command, settings: { ...settings, ...invalid } }).success, false);
+});
+
+test("RTL retuning restarts only after shutdown, keeps settings, and Stop cancels a pending retune", async () => {
+  const command = startSchema.parse({ type: "start", source: "rtl", centerHz: 406050000,
+    gainIndex: 8, agc: true, removeDc: false, noisePrerollMs: 0, settings: await defaults(), bus: 1, address: 2 });
+  const events: ServerEvent[] = [];
+  const launches: { args: string[]; engine: EngineHandlers }[] = [];
+  let stops = 0;
+  const core = new SessionCore((args, engine) => {
+    launches.push({ args, engine });
+    return { stop() { stops++; }, kill() {} };
+  }, () => ["sgb.wav"], sample => sample, event => events.push(event));
+  assert.throws(() => core.retune(145825123), /active RTL-SDR/);
+  core.start(command);
+  assert.throws(() => core.retune(999000001));
+  assert.equal(stops, 0);
+  core.retune(100000000);
+  core.retune(145825123);
+  assert.equal(stops, 1);
+  assert.equal(launches.length, 1);
+  assert.equal(core.status, "stopping");
+  const complete = () => {
+    const last = launches.at(-1)!;
+    last.engine.line(JSON.stringify({ type: "complete", result: { frames: [], diagnostics: {
+      fgbMaxPeakDb: 0, fgbCandidates: 0, fgbMaxSyncVotes: 0, sgbMaxDetectionLevel: 0,
+      sgbCandidates: 0, sgbQualityRejections: 0, sgbBchRejections: 0,
+    } } }));
+    last.engine.close(0);
+  };
+  complete();
+  assert.equal(launches.length, 2);
+  assert.deepEqual(launches[1].args, argumentsFor({ ...command, centerHz: 145825123 }, [], root));
+  assert.deepEqual(events.filter(event => event.type === "error"), []);
+  core.retune(999000000);
+  core.stop();
+  complete();
+  assert.equal(launches.length, 2);
+  assert.equal(core.status, "idle");
+  core.start({ ...command, source: "sample", sample: "sgb.wav" });
+  assert.throws(() => core.retune(145825123), /active RTL-SDR/);
+  core.stop();
+  complete();
+  core.start(command);
+  core.retune(100000000);
+  launches.at(-1)!.engine.stderr("USB disconnected");
+  launches.at(-1)!.engine.close(1);
+  assert.equal(launches.length, 4);
+  assert.equal(core.status, "idle");
+  assert.ok(events.some(event => event.type === "error" && event.message === "USB disconnected"));
 });
 
 test("Configured BCH limit suppresses corrected frames unless explicitly requested", { timeout: 15000 }, async () => {

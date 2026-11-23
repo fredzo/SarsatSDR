@@ -92,8 +92,9 @@ std::int32_t Rtl2832::dsp_offset_hz() noexcept {
 }
 
 void Rtl2832::initialize(std::uint32_t frequency_hz) {
-    if (frequency_hz < 406000000 || frequency_hz > 406170000)
-        throw std::invalid_argument("RTL2832 receiver frequency must be within 406000000..406170000 Hz");
+    // The tuner runs 70 kHz above the requested DSP center during decoding.
+    if (frequency_hz < 100000000 || frequency_hz > 999070000)
+        throw std::invalid_argument("RTL2832 tuner frequency must be within 100000000..999070000 Hz");
     initialized_ = false;
     tuner_.reset();
     registers_.invalidate_tuner_cache();

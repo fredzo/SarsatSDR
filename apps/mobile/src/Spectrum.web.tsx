@@ -24,6 +24,9 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
   sgbDetections: number; fgbDetections: number;
   compact?: boolean;
 }) {
+  const startHz = line?.startHz ?? centerHz - 50000;
+  const bandwidthHz = line ? line.binWidthHz * line.dbfs.length : 100000;
+  const frequencyLabel = (fraction: number) => ((startHz + fraction * bandwidthHz) / 1e6).toFixed(3);
   const fft = useRef<HTMLCanvasElement>(null);
   const waterfall = useRef<HTMLCanvasElement>(null);
   const previous = useRef<number[]>([]);
@@ -184,7 +187,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
         const x = abscissa(n / 10);
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height - 19); ctx.stroke();
         if (!compact || n % 5 === 0)
-          ctx.fillText((406 + n / 100).toFixed(3), Math.max(40, Math.min(width - 49, x - 20)), height - 4);
+          ctx.fillText(frequencyLabel(n / 10), Math.max(40, Math.min(width - 49, x - 20)), height - 4);
       }
       ctx.setLineDash([]);
       if (previous.current.length) {
@@ -195,10 +198,10 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
           const held = markerLevels.current.get(channel.channel)?.level;
           if (held === undefined) continue;
           const level = held + calibrationDb;
-          if (frequency < 406000000 || frequency > 406100000 || level < fftMinDb) continue;
+          if (frequency < startHz || frequency > startHz + bandwidthHz || level < fftMinDb) continue;
           ctx.fillStyle = candidateColors[channel.channel];
           ctx.beginPath();
-          ctx.arc(abscissa((frequency - 406000000) / 100000), ordinate(level), 5, 0, 2 * Math.PI);
+          ctx.arc(abscissa((frequency - startHz) / bandwidthHz), ordinate(level), 5, 0, 2 * Math.PI);
           ctx.fill();
         }
       } else {
@@ -230,9 +233,9 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
 
   const mono = "Consolas,monospace";
   return <section style={{ margin: compact ? 0 : "0 18px", flex: compact ? 1 : undefined, minHeight: 0, display: "flex", flexDirection: "column", background: colors.panel, border: `1px solid ${colors.border}`, borderRadius: 3, overflow: "hidden" }}
-    aria-label="Spectrum and waterfall 406 to 406.100 MHz">
+    aria-label={`Spectrum and waterfall ${frequencyLabel(0)} to ${frequencyLabel(1)} MHz`}>
     <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "1fr auto 1fr", gap: compact ? 4 : 0, alignItems: "center", justifyItems: compact ? "center" : undefined, padding: compact ? "5px 4px" : "9px 12px", font: `10px ${mono}`, background: colors.background, color: colors.trace }}>
-      {!compact && <span>FFT <b style={{ marginLeft: 10 }}>406.000 — 406.100 MHz</b></span>}
+      {!compact && <span>FFT <b style={{ marginLeft: 10 }}>{frequencyLabel(0)} — {frequencyLabel(1)} MHz</b></span>}
       <div style={{ display: "flex" }}>
         <DetectionActivity generation="FGB" detections={fgbDetections} />
         <DetectionActivity generation="SGB" detections={sgbDetections} />
@@ -250,7 +253,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     </div>
     {error && <p role="alert" style={{ background: "#330f0f", color: "#ff8484", padding: 12, margin: 0 }}>{error}</p>}
     {!compact && <><div style={{ display: "flex", justifyContent: "space-between", font: `10px ${mono}`, color: colors.labels, padding: "6px 9px 6px 40px" }}>
-      <span>406.000 MHz</span><span>406.050 MHz</span><span>406.100 MHz</span></div>
+      {[0, .5, 1].map(f => <span key={f}>{frequencyLabel(f)} MHz</span>)}</div>
     <div style={{ padding: "6px 12px", color: "#ffffff", fontSize: 10 }}>
       {automatic ? `WF Auto · noise ${noiseFloor === null ? "—" : (noiseFloor + calibrationDb).toFixed(1)} ${relative ? "relative dB" : "dBm"} · 18 dB color span`
         : "Manual WF · higher Base = darker background; higher Range = lower contrast"}

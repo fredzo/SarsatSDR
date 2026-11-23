@@ -89,9 +89,11 @@ export const serverEventSchema = z.union([nativeEventSchema,
 export type ServerEvent = z.infer<typeof serverEventSchema>;
 export type SpectrumEvent = Extract<ServerEvent, { type: "spectrum" }>;
 
+const centerFrequencyHz = z.number().int().min(100000000).max(999000000);
+export const retuneSchema = z.object({ type: z.literal("retune"), centerHz: centerFrequencyHz });
 export const startSchema = z.object({
   type: z.literal("start"), source: z.enum(["rtl", "sample"]),
-  centerHz: z.number().int().min(406000000).max(406100000),
+  centerHz: centerFrequencyHz,
   gainIndex: z.number().int().min(0).max(11), agc: z.boolean(),
   bus: z.number().int().min(0).max(255).optional(), address: z.number().int().min(0).max(255).optional(),
   sample: z.string().max(128).optional(),
@@ -99,7 +101,7 @@ export const startSchema = z.object({
   settings: settingsSchema,
   fgbFm: z.boolean().optional(),
 }).refine(s => (s.bus === undefined) === (s.address === undefined), "Bus and address must be specified together");
-export const commandSchema = z.union([startSchema, z.object({ type: z.literal("stop") })]);
+export const commandSchema = z.union([startSchema, retuneSchema, z.object({ type: z.literal("stop") })]);
 export type StartCommand = z.infer<typeof startSchema>;
 
 export const infoSchema = z.object({

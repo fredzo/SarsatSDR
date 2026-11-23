@@ -814,7 +814,7 @@ void receiver_oracle() {
     cospas::Rtl2832 receiver(registers);
     require_error<std::logic_error>([&] { receiver.status(); });
     require_error<std::logic_error>([&] { receiver.reset_buffer(); });
-    for (const auto invalid : {0u, 405999999u, 406170001u, 4294967295u})
+    for (const auto invalid : {0u, 99999999u, 999070001u, 4294967295u})
         require_error<std::invalid_argument>([&] { receiver.initialize(invalid); });
     require(io.requests.empty(), "Invalid receiver requests must not access USB");
     receiver.initialize(406050000);
@@ -905,6 +905,20 @@ void receiver_oracle() {
     require(std::all_of(io.requests.begin(), io.requests.end(), [](const auto& request) {
                 return request.index != 0x610 || request.value == 0x74;
             }), "Detected R828D must never receive tuner writes at the R820 address");
+    for (const bool blog_v4 : {false, true}) {
+        for (const auto center : {100000000u, 145825123u, 999000000u}) {
+            UsbRecorder tuned_io;
+            tuned_io.tuner_status = tuned_io.receiver_mode = true;
+            tuned_io.chip_address = blog_v4 ? 0x74 : 0x34;
+            cospas::RtlUsbRegisters tuned_registers(tuned_io);
+            cospas::Rtl2832 tuned(tuned_registers, blog_v4);
+            const auto tuner_hz = static_cast<std::uint32_t>(std::int64_t(center) - tuned.dsp_offset_hz());
+            tuned.initialize(tuner_hz);
+            require(tuned.status().initialized &&
+                    std::abs(*tuned.status().actual_frequency_hz - tuner_hz) < 2000,
+                    "Receiver must tune throughout 100..999 MHz including the DSP frequency offset");
+        }
+    }
 }
 
 class SampleRecorder final : public cospas::RtlUsbSampleIo {

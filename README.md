@@ -26,13 +26,16 @@ aussi en ligne de commande, sans interface.
   Fleches autour de `Frames (x/y)` pour parcourir
   les trames visibles ; chaque nouvelle reception non filtree devient la selection active.
   Detail transmet la trame selectionnee au decodeur COSPAS-SARSAT externe
-  quand l'onglet est affiche.
+  quand l'onglet est affiche ; Share propose la copie et le partage des donnees
+  hexadecimales corrigees ou de l'URL.
 - Detection : tableau de bord fixe en quatre zones (spectre/waterfall,
   liste des trames, detail essentiel et carte), adapte aux tablettes paysage.
+  Le detail FGB inclut Data, la trame hexadecimale corrigee.
   Frames : tableau a gauche et detail complet a droite, avec defilements
   independants si necessaire. Map : carte sans
   defilement de page, gestes de zoom et deplacement disponibles.
-- Spectre sur 406,000..406,100 MHz, 1024 bins, 10 spectres/s ; trace cyan,
+- Frequence centrale reglable de 100 a 999 MHz (406,050 MHz par defaut).
+  Spectre sur 100 kHz autour du centre, 1024 bins, 10 spectres/s ; trace cyan,
   remplissage rouge pour les pics forts, echelle verticale adaptative et
   retombee progressive des pics. Waterfall
   GPU a fond noir et degrades interpoles en frequence et dans le temps ;
@@ -418,9 +421,13 @@ saturee entre 0 et 6, arrondi au pair. Augmenter Base assombrit le fond ;
 augmenter Range diminue le contraste. Reglages et calibration recolorent aussi l'historique.
 Les points FFT indiquent des essais FGB avant BCH, pas des trames validees.
 
-Receiver regroupe le spectre et ses controles, puis la barre de reglage,
-les readouts et les metriques d'acquisition.
-Dans Player, le spectre sans controles precede le bloc de lecture.
+Receiver partage la hauteur disponible entre spectre/waterfall a gauche (75 %)
+et controles empiles a droite (25 %). Les readouts et metriques restent accessibles
+en defilant vers le bas. Saisir le centre en MHz puis valider avec le bouton
+de reglage ; en reception, l'acquisition redemarre proprement a la nouvelle frequence.
+Les trames conservees gardent leur frequence de reception d'origine.
+Player utilise le meme partage 75/25, sans defilement, avec la progression
+sur toute la largeur en bas. Les captures WAV gardent leur centre de 406,050 MHz.
 Choisir une capture puis `PLAY`. Le profil valide, actif par
 defaut, applique DC, prechauffage et PLL selon `samples/playback-profiles.json`,
 sans changer les reglages de reception radio. Le mode manuel utilise Settings.
@@ -435,7 +442,8 @@ Pincer ou utiliser `+` / `-` pour zoomer, puis glisser horizontalement
 pour parcourir la trace et ses graduations temporelles. Au zoom suffisant, les bits bruts et l'hexadecimal sont affiches
 sous la phase FGB ou sous I/Q SGB. En SGB, I (vert) et Q (rouge) sont superposes
 sur la seconde entiere au-dessus de la phase ; les deux graphes restent alignes.
-Les deux tableaux affichent
+Les deux tableaux virtualisent leurs lignes pour ne pas monter tout l'historique
+et affichent
 l'horodatage local de reception ; le temps source reste disponible dans le detail.
 Chaque nouvelle trame est selectionnee automatiquement. Un changement de selection
 ramene la ligne correspondante dans la zone visible du tableau.

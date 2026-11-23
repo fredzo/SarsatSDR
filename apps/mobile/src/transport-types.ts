@@ -1,6 +1,6 @@
 import type { Info, ServerEvent } from "@sarsat/shared/protocol";
 
-export type Command = { type: "stop" } | ({ type: "start" } & Record<string, unknown>);
+export type Command = { type: "stop" } | { type: "retune"; centerHz: number } | ({ type: "start" } & Record<string, unknown>);
 export type Transport = {
   info(): Promise<Info>;
   send(command: Command): void;
