@@ -89,18 +89,17 @@ export function averageSpectrum(line: SpectrumEvent, previous: number[], coeffic
   });
 }
 
-export function persistSpectrum(levels: number[], previous: number[], elapsed: number) {
-  const drop = Math.max(0, elapsed) * 30;
-  return levels.map((level, n) => level > -240 && previous[n] > -240
-    ? Math.max(level, previous[n] - drop) : level);
+export function persistSpectrum(levels: number[], previous: number[], elapsed: number, instantaneous = levels) {
+  const release = Math.exp(-Math.max(0, elapsed) / .6);
+  return levels.map((level, n) => {
+    if (level <= -240 || previous[n] === undefined || previous[n] <= -240) return Math.max(level, instantaneous[n]);
+    const target = Math.max(level, instantaneous[n]);
+    const held = target + Math.max(0, previous[n] - target) * release;
+    return held - target < .5 ? target : held;
+  });
 }
 
-export const fftMinDb = -150;
-
-export function fftTopDb(trace: number[], calibrationDb: number) {
-  const peak = trace.reduce((max, level) => level > -240 ? Math.max(max, level + calibrationDb) : max, -110);
-  return Math.ceil(peak / 5) * 5;
-}
+export const fftMinDb = -150, fftMaxDb = -110;
 
 export function fftOrdinate(level: number, top: number, height: number) {
   return 12 + Math.max(0, Math.min(1, (top - level) / (top - fftMinDb))) * Math.max(0, height - 30);

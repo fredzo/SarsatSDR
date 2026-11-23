@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
 import { Animated, FlatList, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
   type TextStyle, type ViewStyle } from "react-native";
 import { Picker } from "@react-native-picker/picker";
@@ -8,7 +8,7 @@ import Svg, { G, Path, Polyline, Text as SvgText } from "react-native-svg";
 import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileSearch, FileText, FlaskConical, FolderOpen, MapPin,
   Navigation, Play, BoomBox, Radio, RadioTower, RefreshCw, Settings as SettingsIcon, Square, Usb, type LucideIcon,
   ArrowBigRight,
-  ArrowBigLeft, Copy, ExternalLink, Minus, Plus, Share2, X } from "lucide-react-native";
+  ArrowBigLeft, Copy, ExternalLink, Minus, Pencil, Plus, Share2, X } from "lucide-react-native";
 import { startSchema, playbackConfiguration, type Frame, type Info, type Settings, type SpectrumEvent,
   type Diagnostics, type AcquisitionChannel, type ServerEvent } from "@sarsat/shared/protocol";
 import { beaconLocator, beaconPosition, googleMapsUrl, wazeUrl } from "@sarsat/shared/beacon-position";
@@ -18,8 +18,9 @@ import { createTransport } from "./transport";
 import { fitExtraFields, formatFieldFrequencies, frameDetailType, frameSummary } from "./frame-summary";
 import type { Transport } from "./transport-types";
 import { AcquisitionSpinner, type CountdownStart } from "./AcquisitionSpinner";
-import { frameNotification, isFrameFiltered } from "./reception-preferences";
-import { useReceptionPreferences } from "./use-reception-preferences";
+import { frameNotification, isFrameFiltered, receptionPreferencesSchema } from "./reception-preferences";
+import { useReceptionPreferences, useStoredPreferences } from "./use-reception-preferences";
+import { appPreferencesSchema } from "./app-preferences";
 import { useReceptionAudio } from "./use-reception-audio";
 import { createFmAudio } from "./fm-audio";
 import { OfficialDecoder } from "./OfficialDecoder";
@@ -130,28 +131,30 @@ function Range({ label, value, min, max, step, onChange, digits = 0, disabled, s
       disabled={disabled} onValueChange={onChange} minimumTrackTintColor="#00ffff" maximumTrackTintColor="#335555" thumbTintColor="#3fe6e6" />
     <Text style={[s.small, s.mono]}>{value.toFixed(digits)}</Text></View></View>;
 }
-function CenterFrequency({ value, disabled, onChange, onError }: {
-  value: number; disabled: boolean; onChange: (value: number) => void; onError: (message: string) => void;
+function CenterFrequency({ value, disabled, onChange }: {
+  value: number; disabled: boolean; onChange: (value: number) => void;
 }) {
   const [text, setText] = useState(value.toFixed(3));
-  const [focused, setFocused] = useState(false);
+  const input = useRef<ComponentRef<typeof TextInput>>(null);
+  const [validation, setValidation] = useState("");
   useEffect(() => setText(value.toFixed(3)), [value]);
-  const draft = Number(text.replace(",", "."));
-  const displayedText = !focused && text.trim() && Number.isFinite(draft) ? draft.toFixed(3) : text;
   function apply() {
     const mhz = Number(text.replace(",", "."));
     if (!text.trim() || !Number.isFinite(mhz) || mhz < 100 || mhz > 999) {
-      onError("Center frequency must be between 100 and 999 MHz."); return;
+      setValidation("Center frequency must be between 100 and 999 MHz."); return;
     }
+    setValidation("");
     setText(mhz.toFixed(3));
-    onChange(Math.round(mhz * 1e6) / 1e6);
+    if (mhz !== value) onChange(Math.round(mhz * 1e6) / 1e6);
   }
   return <View style={s.field}><Text style={s.label}>Center · MHz</Text>
-    <View style={s.row}><TextInput accessibilityLabel="Center · MHz" keyboardType="decimal-pad" editable={!disabled}
-      style={[s.input, s.mono, { flex: 1, minWidth: 0, fontSize: 20 }]} value={displayedText}
-      onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onChangeText={setText} onSubmitEditing={apply} />
-      <Button iconOnly title="Apply center frequency" icon={RefreshCw} disabled={disabled} onPress={apply} />
+    <View style={s.row}><TextInput ref={input} accessibilityLabel="Center · MHz" keyboardType="decimal-pad" editable={!disabled}
+      style={[s.input, s.mono, { flex: 1, minWidth: 0, fontSize: 20 }]} value={text}
+      onFocus={() => setValidation("")} onChangeText={setText} onBlur={apply} onSubmitEditing={() => input.current?.blur()} />
+      <Button iconOnly title="Edit center frequency" icon={Pencil} disabled={disabled}
+        onPress={() => input.current?.focus()} />
     </View>
+    {!!validation && <Text accessibilityRole="alert" style={s.errorText}>{validation}</Text>}
   </View>;
 }
 function Badge({ text, tone, accessibilityLabel }: { text: string; tone: "valid" | "invalid" | "corrected"; accessibilityLabel?: string }) {
@@ -644,12 +647,18 @@ const Led = ({ tone }: { tone?: "green" | "amber" }) =>
 
 export default function App() {
   const [info, setInfo] = useState<Info | null>(null);
-  const [settings, setSettings] = useState<Settings | null>(null);
   const [tab, setTab] = useState<Tab>("Detection");
   const [status, setStatus] = useState<Info["status"]>("idle");
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
-  const { preferences: reception, current: receptionRef, ready: preferencesReady, change: changeReception } = useReceptionPreferences(setError);
+  const { preferences: reception, current: receptionRef, ready: receptionReady, change: changeReception,
+    replace: replaceReception } = useReceptionPreferences(setError);
+  const { preferences: saved, current: savedRef, ready: savedReady, change: changeSaved,
+    replace: replaceSaved } = useStoredPreferences("sarsat.app-preferences", appPreferencesSchema, setError);
+  const { settings, center, gain, agc, sample, useSampleProfile, removeDc, preroll, base, range,
+    waterfallAutomatic, calibrationDb, average, waterfallSpeed } = saved;
+  const preferencesReady = receptionReady && savedReady;
+  const [confirmDefaults, setConfirmDefaults] = useState<"Audio" | "RTL-SDR" | null>(null);
   const playSound = useReceptionAudio(setError);
   const fmAudio = useRef<ReturnType<typeof createFmAudio> | null>(null);
   const playSoundRef = useRef(playSound);
@@ -668,21 +677,8 @@ export default function App() {
   const [metrics, setMetrics] = useState<{ samples: number; diagnostics: Diagnostics; gainIndex?: number; clippedSamples?: number } | null>(null);
   const [session, setSession] = useState<{ source: "rtl" | "sample"; centerHz: number; sampleRateHz: number; durationSeconds: number | null; noisePrerollMs?: number } | null>(null);
   const [epoch, setEpoch] = useState(0);
-  const [center, setCenter] = useState(406.05);
   const [receiverHeight, setReceiverHeight] = useState(0);
-  const [gain, setGain] = useState(8);
-  const [agc, setAgc] = useState(true);
   const [device, setDevice] = useState("");
-  const [sample, setSample] = useState("sgb.wav");
-  const [useSampleProfile, setUseSampleProfile] = useState(true);
-  const [removeDc, setRemoveDc] = useState(false);
-  const [preroll, setPreroll] = useState(0);
-  const [base, setBase] = useState(27);
-  const [range, setRange] = useState(11);
-  const [waterfallAutomatic, setWaterfallAutomatic] = useState(true);
-  const [calibrationDb, setCalibrationDb] = useState(0);
-  const [average, setAverage] = useState(.5);
-  const [waterfallSpeed, setWaterfallSpeed] = useState(1);
   const [transport, setTransport] = useState<Transport | null>(null);
   const [frameSource] = useState({ label: null as string | null, centerHz: 406050000, sequence: 0 });
 
@@ -690,13 +686,16 @@ export default function App() {
     if (!target) return;
     const parsed = await target.info();
     setInfo(parsed);
-    setSettings(previous => previous ?? parsed.settings);
   }
+  useEffect(() => {
+    if (savedReady && info && !savedRef.current.settings) changeSaved("settings", info.settings);
+  }, [savedReady, info, changeSaved]);
   const devices = info?.devices;
+  const selectedDevice = devices?.some(value => `${value.bus}:${value.address}` === device) ? device : "";
   useEffect(() => {
     if (!devices) return;
     const addresses = devices.map(({ bus, address }) => `${bus}:${address}`);
-    setDevice(previous => addresses.length === 1 ? addresses[0] : addresses.includes(previous) ? previous : "");
+    setDevice(previous => addresses.includes(previous) ? previous : addresses[0] ?? "");
   }, [devices]);
 
   useEffect(() => {
@@ -787,11 +786,11 @@ export default function App() {
       setError("No validated profile for this capture. Select manual mode to use Settings.");
       return;
     }
-    const location = device.split(":").map(Number);
+    const location = selectedDevice.split(":").map(Number);
     const parsed = startSchema.safeParse({ type: "start", source, centerHz: Math.round(center * 1e6),
       gainIndex: gain, agc, sample, removeDc, noisePrerollMs: preroll, settings, fgbFm: receptionRef.current.fgbFm,
       ...(source === "sample" && useSampleProfile ? playback : {}),
-      ...(device ? { bus: location[0], address: location[1] } : {}) });
+      ...(selectedDevice ? { bus: location[0], address: location[1] } : {}) });
     if (!parsed.success) { setError(parsed.error.issues.map(issue => issue.message).join(" · ")); return; }
     if (parsed.data.fgbFm && parsed.data.settings.fgb) fmAudio.current?.activate();
     transport?.send(parsed.data);
@@ -801,7 +800,7 @@ export default function App() {
   function tuneCenter(mhz: number) {
     setError("");
     if (mhz === center) return;
-    setCenter(mhz);
+    changeSaved("center", mhz);
     if (busy) transport?.send({ type: "retune", centerHz: Math.round(mhz * 1e6) });
     else { setSession(null); setLine(null); setChannels([]); setEpoch(value => value + 1); }
   }
@@ -812,15 +811,15 @@ export default function App() {
     else if (!start("rtl")) receiverActionPending.current = false;
   }
   function change<K extends keyof Settings>(key: K, value: Settings[K]) {
-    setSettings(old => old ? { ...old, [key]: value } : old);
+    const old = savedRef.current.settings;
+    if (old) changeSaved("settings", { ...old, [key]: value });
   }
   async function pick() {
     try {
       const name = await transport?.pickFile?.();
       if (!name) return;
       await refresh();
-      setSample(name);
-      setUseSampleProfile(false);
+      replaceSaved({ sample: name, useSampleProfile: false });
     } catch (reason) { setError(String(reason)); }
   }
   function exportJson() {
@@ -851,6 +850,17 @@ export default function App() {
   </View>;
 
   return <View style={s.main}>
+    {confirmDefaults && <ActionPopup title={`Restore ${confirmDefaults} default settings?`} close={() => setConfirmDefaults(null)} actions={[
+      { label: "Cancel", icon: X, run: () => {} },
+      { label: "Restore default settings", icon: RefreshCw, run: () => {
+        if (confirmDefaults === "Audio") {
+          const { filterInvalid: _invalid, filterOrbitographic: _system, ...audio } = receptionPreferencesSchema.parse({});
+          replaceReception(audio);
+        } else if (info) {
+          replaceSaved({ settings: info.settings, gain: 8, agc: true, calibrationDb: 0 });
+        }
+      } },
+    ]} />}
     {confirmClear && <ActionPopup title="Clear all received frames?" close={() => setConfirmClear(false)} actions={[
       { label: "Cancel", icon: X, run: () => {} },
       { label: "Clear all frames", icon: Eraser, kind: "stop", run: () => { setEntries([]); setSelected(null); } },
@@ -894,16 +904,16 @@ export default function App() {
         <View style={{ flex: 3, minWidth: 0 }}>{spectrum(true)}</View>
         <View style={s.sideControls}>
           <Text style={[s.h2, { marginBottom: 0 }]}>Player</Text>
-            <Select narrow label="WAV capture" disabled={busy} value={sample} onChange={setSample}
+            <Select narrow label="WAV capture" disabled={busy || !savedReady} value={sample} onChange={value => changeSaved("sample", value)}
               items={(info?.samples ?? []).map(name => ({ label: name, value: name }))} />
             {transport?.pickFile && <Button icon={FolderOpen} title="OPEN WAV…" disabled={busy} onPress={() => { void pick(); }} />}
-            <Check label="Validated capture profile" value={useSampleProfile} disabled={busy} onChange={setUseSampleProfile} />
+            <Check label="Validated capture profile" value={useSampleProfile} disabled={busy || !savedReady} onChange={value => changeSaved("useSampleProfile", value)} />
             <Check label="Explicit DC removal" value={useSampleProfile ? playback?.removeDc ?? false : removeDc}
-              disabled={busy || useSampleProfile} onChange={setRemoveDc} />
+              disabled={busy || !savedReady || useSampleProfile} onChange={value => changeSaved("removeDc", value)} />
             <NumberField style={{ flexShrink: 1 }} label="Noise preroll · ms" disabled={busy || useSampleProfile}
-              value={useSampleProfile ? playback?.noisePrerollMs ?? 0 : preroll} onChange={setPreroll} />
+              value={useSampleProfile ? playback?.noisePrerollMs ?? 0 : preroll} onChange={value => changeSaved("preroll", value)} />
             <View style={s.row}>
-              <View style={s.fill}><Button kind="primary" icon={Play} title="PLAY" disabled={busy || !connected || !settings || !preferencesReady} onPress={() => start("sample")} /></View>
+              <View style={s.fill}><Button kind="primary" icon={Play} title="PLAY" disabled={busy || !connected || !info || !settings || !preferencesReady} onPress={() => start("sample")} /></View>
               <View style={s.fill}><Button icon={Square} title="STOP" disabled={!busy} onPress={stop} /></View>
             </View>
           {useSampleProfile ? playback ? <Text style={[s.p, { fontSize: 10, lineHeight: 14, marginTop: 4 }]}>
@@ -929,7 +939,7 @@ export default function App() {
         <View style={[s.split, { flex: undefined, height: receiverHeight || 500 }]}>
           <View style={{ flex: 3, minWidth: 0 }}>{spectrum(true)}</View>
           <ScrollView style={s.sideControls} contentContainerStyle={{ gap: 6 }} nestedScrollEnabled>
-          <CenterFrequency value={center} onChange={tuneCenter} onError={setError}
+          <CenterFrequency value={center} onChange={tuneCenter}
             disabled={!settings || (busy && (session?.source !== "rtl" || status !== "running"))} />
           <View style={[s.fieldset, decoderLocked && { opacity: .6 }]}><Text style={s.legend}>DECODERS</Text><View style={s.row}>
             <Check label="FGB" value={displayedSettings?.fgb ?? false} disabled={decoderLocked} onChange={value => change("fgb", value)} />
@@ -937,12 +947,13 @@ export default function App() {
             <Check label="Normal PRN" value={displayedSettings?.normalPrn ?? false} disabled={decoderLocked} onChange={value => change("normalPrn", value)} />
             <Check label="Self Test PRN" value={displayedSettings?.testPrn ?? false} disabled={decoderLocked} onChange={value => change("testPrn", value)} />
           </View></View>
-          <Range stacked label="FFT Average" value={average} min={.01} max={.99} step={.01} onChange={setAverage} digits={2} />
-          <Check label="WF Auto" value={waterfallAutomatic} onChange={setWaterfallAutomatic} />
-          <Range stacked label="WF Base" value={base} min={0} max={100} step={1} onChange={setBase} disabled={waterfallAutomatic} />
-          <Range stacked label="WF Range" value={range} min={0} max={100} step={1} onChange={setRange} disabled={waterfallAutomatic} />
-          <Range stacked label={`WF Duration: ${(7 / waterfallSpeed).toFixed(1)} s · Speed`} value={waterfallSpeed} min={.25} max={4} step={.25}
-            onChange={setWaterfallSpeed} digits={2} />
+          <Range stacked label="FFT Average" value={average} min={.01} max={.99} step={.01} onChange={value => changeSaved("average", value)} digits={2} />
+          <Check label="WF Auto" value={waterfallAutomatic} onChange={value => changeSaved("waterfallAutomatic", value)} />
+          <Range stacked label="WF Base" value={base} min={0} max={100} step={1} onChange={value => changeSaved("base", value)} disabled={waterfallAutomatic} />
+          <Range stacked label="WF Range" value={range} min={0} max={100} step={1} onChange={value => changeSaved("range", value)} disabled={waterfallAutomatic} />
+          <Range stacked label="WF Speed" value={waterfallSpeed} min={.25} max={4} step={.25}
+            onChange={value => changeSaved("waterfallSpeed", value)} digits={2} />
+          <Text style={s.small}>WF Duration: {(7 / waterfallSpeed).toFixed(1)} s</Text>
           </ScrollView>
         </View>
       <View style={s.readouts}>
@@ -967,21 +978,37 @@ export default function App() {
 
       {tab === "Signal" && <Signal entry={activeFrame} />}
 
-      {tab === "Settings" && <View style={s.panel}><Text style={s.h2}>Settings</Text>
-        <View style={s.fieldset}><Text style={s.legend}>RECEPTION · APPLIED IMMEDIATELY · SAVED ON THIS DEVICE</Text>
+      {tab === "Settings" && <View style={s.settingsPage}>
+        <View style={s.fieldset}><Text style={s.h2}>Filtering</Text>
+          <View style={s.settingsGrid}>
+            <Check label="Filter invalid frames" value={reception.filterInvalid} disabled={!preferencesReady}
+              onChange={value => changeReception("filterInvalid", value)} />
+            <Check label="Filter system frames" value={reception.filterOrbitographic} disabled={!preferencesReady}
+              onChange={value => changeReception("filterOrbitographic", value)} />
+          </View>
+        </View>
+        <View style={[s.fieldset, s.settingsBlock]}>
+          <View style={[s.row, { justifyContent: "space-between" }]}><Text style={s.h2}>Audio</Text>
+            <Button title="Default settings" icon={RefreshCw} disabled={!preferencesReady} onPress={() => setConfirmDefaults("Audio")} />
+          </View>
+          <View style={s.fieldset}><Text style={s.legend}>FGB FM demodulation</Text>
+            <View style={s.settingsGrid}>
+              <Check label="FGB FM audio (next start)" value={reception.fgbFm} disabled={!preferencesReady}
+                onChange={value => changeReception("fgbFm", value)} />
+              <Range label="FGB FM volume · %" value={Math.round(reception.fgbFmVolume * 100)} min={0} max={100} step={1}
+                disabled={!preferencesReady || !reception.fgbFm} onChange={value => changeReception("fgbFmVolume", value / 100)} />
+            </View>
+          </View>
+          <View style={s.fieldset}><Text style={s.legend}>Notifications</Text>
           <View style={s.settingsGrid}>
             <Check label="Frame audio notifications" value={reception.notifications} disabled={!preferencesReady}
               onChange={value => changeReception("notifications", value)} />
             <Range label="Notification volume · %" value={Math.round(reception.volume * 100)} min={0} max={100} step={1}
               disabled={!preferencesReady} onChange={value => changeReception("volume", value / 100)} />
-            <Check label="FGB FM audio (next start)" value={reception.fgbFm} disabled={!preferencesReady}
-              onChange={value => changeReception("fgbFm", value)} />
-            <Range label="FGB FM volume · %" value={Math.round(reception.fgbFmVolume * 100)} min={0} max={100} step={1}
-              disabled={!preferencesReady || !reception.fgbFm} onChange={value => changeReception("fgbFmVolume", value / 100)} />
-            <Check label="Filter invalid frames" value={reception.filterInvalid} disabled={!preferencesReady}
-              onChange={value => changeReception("filterInvalid", value)} />
-            <Check label="Filter system frames" value={reception.filterOrbitographic} disabled={!preferencesReady}
-              onChange={value => changeReception("filterOrbitographic", value)} />
+          </View>
+          </View>
+          <View style={s.fieldset}><Text style={s.legend}>Countdown</Text>
+          <View style={s.settingsGrid}>
             <Check label="FGB countdown" value={reception.countdown} disabled={!preferencesReady}
               onChange={value => changeReception("countdown", value)} />
             <NumberField label="Countdown duration · seconds" value={reception.countdownSeconds} disabled={!preferencesReady}
@@ -991,17 +1018,38 @@ export default function App() {
             <Check label="Auto reload countdown" value={reception.autoReloadCountdown} disabled={!preferencesReady}
               onChange={value => changeReception("autoReloadCountdown", value)} />
           </View>
+          </View>
         </View>
-        <View style={s.fieldset}><Text style={s.legend}>RTL-SDR · 921600 complex samples/s · Bias-T OFF</Text>
+        <View style={[s.fieldset, s.settingsBlock]}>
+          <View style={[s.row, { justifyContent: "space-between" }]}>
+            <View style={s.row}>
+              <Text style={[s.h2, { marginBottom: 0 }]}>RTL-SDR</Text>
+              <Text style={[s.p, { marginTop: 0 }]}>921600 complex samples/s · Bias-T OFF</Text>
+            </View>
+            <Button title="Default settings" icon={RefreshCw} disabled={busy || !info || !preferencesReady} onPress={() => setConfirmDefaults("RTL-SDR")} />
+          </View>
+          <View style={s.fieldset}><Text style={s.legend}>USB</Text>
           <View style={s.settingsGrid}>
-            <Select label="USB device" value={device} onChange={setDevice} disabled={busy || !settings}
+            <Select label="USB device" value={selectedDevice}
+              onChange={setDevice} disabled={busy || !settings}
               items={[{ label: info?.devices.length ? "Select a device" : "No device detected", value: "" },
                 ...(info?.devices ?? []).map(value => ({ value: `${value.bus}:${value.address}`,
                   label: `${value.vendorId.toString(16).padStart(4, "0")}:${value.productId.toString(16).padStart(4, "0")} · bus ${value.bus}, address ${value.address}` }))]} />
-            <NumberField style={s.setting} label="Initial gain preset · 0–11" value={gain} disabled={busy} onChange={setGain} />
-            <View style={s.setting}><Check label="FE_AGC" value={agc} disabled={busy} onChange={setAgc} /></View>
-            <NumberField style={s.setting} label="RTL calibration · dB" value={calibrationDb} onChange={setCalibrationDb} />
-            {numericSettings.map(field => <NumberField key={field.key} style={s.setting} label={field.label} disabled={busy || !settings}
+            <Button icon={Usb} title="REFRESH USB" disabled={busy} onPress={() => { void refresh().catch(reason => setError(String(reason))); }} />
+            <NumberField style={s.setting} label="Initial gain preset · 0–11" value={gain} disabled={busy || !savedReady} onChange={value => changeSaved("gain", value)} />
+            <View style={s.setting}><Check label="Front-End AGC" value={agc} disabled={busy || !savedReady} onChange={value => changeSaved("agc", value)} /></View>
+            <NumberField style={s.setting} label="RTL calibration · dB" value={calibrationDb} disabled={!savedReady} onChange={value => changeSaved("calibrationDb", value)} />
+          </View>
+          </View>
+          <View style={s.fieldset}><Text style={s.legend}>FGB</Text>
+            <View style={s.settingsGrid}>
+              {numericSettings.filter(field => field.key.startsWith("fgb")).map(field => <NumberField key={field.key} style={s.setting} label={field.label} disabled={busy || !settings}
+                value={settings?.[field.key]} onChange={value => change(field.key, Math.min(field.max ?? Infinity, Math.max(field.min ?? 0, value)))} />)}
+            </View>
+          </View>
+          <View style={s.fieldset}><Text style={s.legend}>SGB</Text>
+          <View style={s.settingsGrid}>
+            {numericSettings.filter(field => !field.key.startsWith("fgb")).map(field => <NumberField key={field.key} style={s.setting} label={field.label} disabled={busy || !settings}
               value={settings?.[field.key]} onChange={value => change(field.key, Math.min(field.max ?? Infinity, Math.max(field.min ?? 0, value)))} />)}
             <Select label="PRN alignment" value={String(settings?.prnAlignment ?? 2)} disabled={busy || !settings}
               onChange={value => change("prnAlignment", Number(value))}
@@ -1010,10 +1058,8 @@ export default function App() {
             <View style={s.setting}><Check label="Show invalid / over-limit SGB BCH" value={settings?.showBchFailures ?? false} disabled={busy || !settings} onChange={value => change("showBchFailures", value)} /></View>
           </View>
           <Text style={s.p}>Search Depth: ±{((settings?.searchDepth ?? 9) * 1.2 / 9).toFixed(3)} kHz.</Text>
+          </View>
         </View>
-        <View style={s.row}>
-          <Button icon={Usb} title="REFRESH USB" disabled={busy} onPress={() => { void refresh().catch(reason => setError(String(reason))); }} />
-          <Button icon={RefreshCw} title="NATIVE DEFAULTS" disabled={busy || !info} onPress={() => info && setSettings(info.settings)} /></View>
       </View>}
     </ScrollView>}
     <View style={s.nav}>
@@ -1163,6 +1209,8 @@ const s = StyleSheet.create({
   traceHeader: { paddingVertical: 9, paddingHorizontal: 12, backgroundColor: "#002222", flexDirection: "row", justifyContent: "space-between" },
   traceText: { color: "#99baba", fontSize: 11 },
   settingsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 20, paddingVertical: 16 },
+  settingsPage: { padding: 18, gap: 24 },
+  settingsBlock: { gap: 16, paddingVertical: 12 },
   setting: { flexBasis: 260, flexGrow: 1 },
   statusbar: { borderTopWidth: 1, borderTopColor: "#003333", backgroundColor: "#003333", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 10, paddingVertical: 9, paddingHorizontal: 18 },
   status: { fontSize: 10, color: "#99baba" },

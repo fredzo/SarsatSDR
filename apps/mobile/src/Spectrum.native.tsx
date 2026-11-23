@@ -4,7 +4,7 @@ import { AlphaType, Canvas, Circle, ColorType, DashPathEffect, Fill, FilterMode,
   Path, Shader, Skia, Text as SkiaText, matchFont, vec, type SkImage } from "@shopify/react-native-skia";
 import type { SpectrumEvent, AcquisitionChannel } from "@sarsat/shared/protocol";
 import { candidateColors, averageSpectrum, WaterfallBuffer, waterfallBins as BINS, waterfallRows as ROWS,
-  persistSpectrum, fftMinDb, fftTopDb, fftOrdinate, spectrumColors as colors,
+  persistSpectrum, fftMinDb, fftMaxDb, fftOrdinate, spectrumColors as colors,
   waterfallLineMs, waterfallVisibleRows } from "@sarsat/shared/spectrum-display";
 import { DetectionActivity } from "./DetectionActivity";
 
@@ -105,7 +105,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     history.current?.push(averaged, line.timeSeconds);
     setNoiseFloor(history.current?.noiseFloorDb ?? null);
     arrivedAt.current = performance.now();
-    setTrace(previous => persistSpectrum(averaged, previous, elapsed));
+    setTrace(previous => persistSpectrum(averaged, previous, elapsed, averageSpectrum(line, [], 1)));
     upload();
   }, [line]);
 
@@ -122,7 +122,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
   }
 
   const plot = width - 48;
-  const top = fftTopDb(trace, calibrationDb);
+  const top = fftMaxDb;
   const ordinate = (level: number) => fftOrdinate(level, top, fftHeight);
   const abscissa = (fraction: number) => 40 + fraction * plot;
   const labelStep = compact && top - fftMinDb > 50 ? 20 : 10;

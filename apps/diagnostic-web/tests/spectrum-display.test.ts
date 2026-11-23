@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { averageSpectrum, persistSpectrum, fftTopDb, fftOrdinate, WaterfallBuffer, waterfallBins, waterfallRows } from "@sarsat/shared/spectrum-display";
+import { averageSpectrum, persistSpectrum, fftMaxDb, fftOrdinate, WaterfallBuffer, waterfallBins, waterfallRows } from "@sarsat/shared/spectrum-display";
 import { nativeEventSchema, type SpectrumEvent } from "@sarsat/shared/protocol";
 
 test("Waterfall interpolates fractional levels instead of snapping to seven colors", () => {
@@ -23,15 +23,44 @@ test("Display applies native display offset before averaging, without coloring u
   assert.equal(next[0], -240);
 });
 
-test("FFT draws FGB peaks near the top and lets them decay at a time-based rate", () => {
+test("FFT clips strong and calibrated peaks at -110 dB without moving quieter ordinates", () => {
+  const height = 230, ceiling = fftOrdinate(-110, fftMaxDb, height);
+  for (const peak of [-110, -104, -60, -52])
+    assert.equal(fftOrdinate(peak, fftMaxDb, height), ceiling);
+  assert.ok(fftOrdinate(-130, fftMaxDb, height) > ceiling);
+  assert.ok(fftOrdinate(-150, fftMaxDb, height) > fftOrdinate(-130, fftMaxDb, height));
+});
+
+test("FFT attacks immediately, then returns near noise in about three seconds regardless of update cadence", () => {
   const peak = persistSpectrum([-104, -131], [-130, -132], .1);
   assert.deepEqual(peak, [-104, -131]);
-  const height = 230;
-  assert.ok(fftOrdinate(peak[0], fftTopDb(peak, 0), height) < height * .15);
-  assert.ok(fftOrdinate(-52, fftTopDb([-60], 8), height) > 12, "Calibrated peak fits the scale");
-  assert.deepEqual(persistSpectrum([-133, -240], peak, .1), [-107, -240]);
-  assert.deepEqual(persistSpectrum([-133, -131], peak, .5), [-119, -131]);
-  assert.deepEqual(persistSpectrum([-133, -131], peak, 1), [-133, -131]);
+  assert.equal(persistSpectrum([-133, -240], peak, .1)[1], -240);
+  assert.equal(persistSpectrum([-130], [-140], .1, [-100])[0], -100, "Averaging must not hide a new burst");
+  for (const step of [.05, .1, .2]) {
+    let trace = [-90];
+    for (let n = 0; n < Math.round(1 / step); n++) trace = persistSpectrum([-140], trace, step);
+    assert.ok(trace[0] > -138 && trace[0] < -130, "Peak remains visible after one second");
+    for (let n = 0; n < Math.round(1 / step); n++) trace = persistSpectrum([-140], trace, step);
+    assert.ok(trace[0] > -139.5, "Release now lasts longer than two seconds");
+    for (let n = 0; n < Math.round(1 / step); n++) trace = persistSpectrum([-140], trace, step);
+    assert.ok(trace[0] <= -139.5, "Peak has returned to noise after three seconds");
+    assert.ok(trace[0] >= -140, "Release never overshoots below noise");
+  }
+  assert.deepEqual(persistSpectrum([-140], [-100], 0), [-100]);
+  assert.deepEqual(persistSpectrum([-140], [-100], 5), [-140]);
+  const line: SpectrumEvent = { type: "spectrum", timeSeconds: 0, startHz: 406000000,
+    binWidthHz: 97.65625, displayOffsetDb: -80, fullBandwidthDbm: null, dbfs: Array(1024).fill(-60) };
+  let averaged = averageSpectrum(line, [], .5), trace = averaged;
+  line.dbfs.fill(-10);
+  averaged = averageSpectrum(line, averaged, .5);
+  trace = persistSpectrum(averaged, trace, .1, averageSpectrum(line, [], 1));
+  assert.equal(trace[0], -90, "Real display pipeline attacks in one spectrum update");
+  line.dbfs.fill(-60);
+  for (let n = 0; n < 30; n++) {
+    averaged = averageSpectrum(line, averaged, .5);
+    trace = persistSpectrum(averaged, trace, .1, averageSpectrum(line, [], 1));
+  }
+  assert.ok(trace[0] <= -139.5, "Averaged display pipeline returns to noise within three seconds");
 });
 
 test("Manual calibration recolors existing history without coloring missing bins", () => {

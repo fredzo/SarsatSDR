@@ -3,12 +3,30 @@ import assert from "node:assert/strict";
 import type { Frame } from "@sarsat/shared/protocol";
 import { frameNotification, isFrameFiltered, receptionPreferencesSchema } from "../../mobile/src/reception-preferences";
 import { FgbCountdown } from "../../mobile/src/fgb-countdown";
+import { appPreferencesSchema } from "../../mobile/src/app-preferences";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { settingsSchema } from "@sarsat/shared/protocol";
 
 const frame = (generation: 1 | 2, beaconType: string, valid = true): Frame => ({
   generation, beaconType, mode: "normal", timeSeconds: 0, frequencyOffsetHz: 0,
   rawHex: "A".repeat(36), correctedHex: "A".repeat(36),
   bch: generation === 1 ? [{ valid: true, correctedErrors: 0 }, { valid, correctedErrors: valid ? 0 : null }]
     : [{ valid, correctedErrors: valid ? 0 : null }],
+});
+
+test("Saved app preferences round-trip all receiver, decoder, display and player settings", () => {
+  const executable = fileURLToPath(new URL(`../../../build/cospas-cli${process.platform === "win32" ? ".exe" : ""}`, import.meta.url));
+  const settings = settingsSchema.parse(JSON.parse(execFileSync(executable, ["settings", "--json"], { encoding: "utf8" })));
+  const saved = appPreferencesSchema.parse({ settings: { ...settings, fgbOverPeakDb: 17, sgbThreshold: 80 },
+    center: 145.825, gain: 5, agc: false, device: "1:2", calibrationDb: -3.5,
+    sample: "fgb.wav", useSampleProfile: false, removeDc: true, preroll: 2000,
+    base: 30, range: 20, waterfallAutomatic: false, average: .8, waterfallSpeed: 2 });
+  assert.deepEqual(appPreferencesSchema.parse(JSON.parse(JSON.stringify(saved))), saved);
+  assert.equal("device" in saved, false, "Legacy USB addresses must not survive loading or saving");
+  for (const invalid of [{ center: 99 }, { gain: 12 }, { average: 0 }, { waterfallSpeed: 5 },
+    { settings: { ...settings, fgbMaxErrors: 4 } }])
+    assert.equal(appPreferencesSchema.safeParse({ ...saved, ...invalid }).success, false);
 });
 
 test("Frame notification checks every BCH and prioritizes active display filters", () => {

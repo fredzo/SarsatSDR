@@ -36,8 +36,8 @@ aussi en ligne de commande, sans interface.
   defilement de page, gestes de zoom et deplacement disponibles.
 - Frequence centrale reglable de 100 a 999 MHz (406,050 MHz par defaut).
   Spectre sur 100 kHz autour du centre, 1024 bins, 10 spectres/s ; trace cyan,
-  remplissage rouge pour les pics forts, echelle verticale adaptative et
-  retombee progressive des pics. Waterfall
+  remplissage rouge pour les pics forts, echelle verticale fixe de -150 a -110 dB
+  avec ecretage au-dessus, montee rapide et retombee des pics vers le bruit en environ trois secondes. Waterfall
   GPU a fond noir et degrades interpoles en frequence et dans le temps ;
   les candidats FGB restent marques.
 - Defilement anime de 0,25x a 4x, defaut 1x : historique visible de 28 a
@@ -60,7 +60,11 @@ aussi en ligne de commande, sans interface.
   compteur croissant modulo 1000 au demarrage et apres expiration sans auto-relance.
   Appui long : remise a zero en mode croissant jusqu'a la prochaine FGB non filtree,
   avec un double bip, sans modifier le reglage d'auto-relance. Sons, countdown et beeps actives par defaut,
-  filtres et auto-relance desactives. Ces reglages sont memorises sur l'appareil.
+  filtres et auto-relance desactives. Settings regroupe Filtering, Audio et RTL-SDR,
+  avec restauration confirmee des valeurs par defaut Audio et RTL-SDR.
+  Tous les reglages (decodeurs, USB, affichage, lecteur et reception) sont memorises
+  sur l'appareil et restaures au lancement suivant, sauf le choix du peripherique USB :
+  la cle connectee est selectionnee au lancement.
 - Lecture temps reel des neuf captures embarquees ; ouverture de WAV utilisateur
   sur Android. PCM stereo I/Q 8 bits, 16 bits et flottant 32 bits.
 

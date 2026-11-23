@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { SpectrumEvent, AcquisitionChannel } from "@sarsat/shared/protocol";
 import { candidateColors, averageSpectrum, WaterfallBuffer, waterfallBins as BINS, waterfallRows as ROWS,
-  persistSpectrum, fftMinDb, fftTopDb, fftOrdinate, spectrumColors as colors,
+  persistSpectrum, fftMinDb, fftMaxDb, fftOrdinate, spectrumColors as colors,
   waterfallLineMs, waterfallVisibleRows } from "@sarsat/shared/spectrum-display";
 import { DetectionActivity } from "./DetectionActivity";
 
@@ -152,7 +152,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
       const width = canvas.clientWidth, height = canvas.clientHeight;
       if (width <= 48 || height <= 30) return;
       ctx.font = "11px monospace";
-      const top = fftTopDb(previous.current, calibrationDb);
+      const top = fftMaxDb;
       const ordinate = (level: number) => fftOrdinate(level, top, height);
       const abscissa = (fraction: number) => 40 + fraction * (width - 48);
       ctx.fillStyle = colors.background;
@@ -212,7 +212,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
       const elapsed = latest.current ? line.timeSeconds - latest.current.timeSeconds : 0;
       latest.current = line;
       averagedTrace.current = averageSpectrum(line, averagedTrace.current, average);
-      previous.current = persistSpectrum(averagedTrace.current, previous.current, elapsed);
+      previous.current = persistSpectrum(averagedTrace.current, previous.current, elapsed, averageSpectrum(line, [], 1));
       renderer.current?.push(new Float32Array(averagedTrace.current), line.timeSeconds);
     }
     // Hold the acquisition ordinate even if RTL AGC changes during the trial.
