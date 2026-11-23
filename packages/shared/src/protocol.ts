@@ -8,6 +8,7 @@ const settingsFields = z.object({
   fgbAlpha: finite.nonnegative(), fgbBeta: finite.nonnegative(),
   fgbZeta: finite.nonnegative(), fgbAverage: finite.min(0).max(1),
   fgbRuntimeMs: z.number().int().positive(),
+  fgbMaxCandidates: z.number().int().min(1).max(10).default(4),
   fgbMaxErrors: z.number().int().min(0).max(3),
   fgbHeaderErrors: z.number().int().min(0).max(3),
   fgbBch2MaxErrors: z.number().int().min(0).max(2),
@@ -59,7 +60,7 @@ export const diagnosticsSchema = z.object({
 });
 export type Diagnostics = z.infer<typeof diagnosticsSchema>;
 export const acquisitionChannelSchema = z.object({
-  channel: z.number().int().min(0).max(3), frequencyOffsetHz: finite, levelDbfs: finite,
+  channel: z.number().int().min(0).max(9), frequencyOffsetHz: finite, levelDbfs: finite,
 });
 export type AcquisitionChannel = z.infer<typeof acquisitionChannelSchema>;
 export const nativeEventSchema = z.discriminatedUnion("type", [
@@ -68,11 +69,11 @@ export const nativeEventSchema = z.discriminatedUnion("type", [
     label: z.string().optional() }),
   z.object({ type: z.literal("spectrum"), timeSeconds: finite, startHz: finite, binWidthHz: finite.positive(),
     displayOffsetDb: finite, fullBandwidthDbm: finite.nullable(), dbfs: z.array(finite.nullable()).length(1024) }),
-  z.object({ type: z.literal("acquisition"), channels: z.array(acquisitionChannelSchema).max(4)
+  z.object({ type: z.literal("acquisition"), channels: z.array(acquisitionChannelSchema).max(10)
     .refine(channels => new Set(channels.map(channel => channel.channel)).size === channels.length,
       "Duplicate FGB channel") }),
   z.object({ type: z.literal("frame"), frame: frameSchema }),
-  z.object({ type: z.literal("fmAudio"), channel: z.number().int().min(0).max(3),
+  z.object({ type: z.literal("fmAudio"), channel: z.number().int().min(0).max(9),
     pcm: z.string().min(4).max(1280).regex(/^[A-Za-z0-9+/]+={0,2}$/)
       .refine(text => text.length % 4 === 0 && (text.length / 4 * 3 -
         (text.endsWith("==") ? 2 : text.endsWith("=") ? 1 : 0)) % 2 === 0) }),

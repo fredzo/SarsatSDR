@@ -8,7 +8,8 @@ export const spectrumColors = {
   fillStops: [0, .25, .48, .64, .82, 1],
   grid: "#335555", labels: "#99baba", trace: "#00ffff",
 };
-export const candidateColors = ["#800040", "#ff8080", "#008000", "#ff0000"] as const;
+export const candidateColors = ["#800040", "#ff8080", "#008000", "#ff0000", "#ff901e",
+  "#ffe443", "#00ffff", "#6ea6f2", "#c080ff", "#ffffff"] as const;
 export const waterfallBins = 1024, waterfallRows = 281, waterfallLineMs = 100;
 export const waterfallVisibleRows = (speed: number) => 70 / speed;
 

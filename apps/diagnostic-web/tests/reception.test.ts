@@ -18,14 +18,19 @@ const frame = (generation: 1 | 2, beaconType: string, valid = true): Frame => ({
 test("Saved app preferences round-trip all receiver, decoder, display and player settings", () => {
   const executable = fileURLToPath(new URL(`../../../build/cospas-cli${process.platform === "win32" ? ".exe" : ""}`, import.meta.url));
   const settings = settingsSchema.parse(JSON.parse(execFileSync(executable, ["settings", "--json"], { encoding: "utf8" })));
-  const saved = appPreferencesSchema.parse({ settings: { ...settings, fgbOverPeakDb: 17, sgbThreshold: 80 },
+  const saved = appPreferencesSchema.parse({ settings: { ...settings, fgbOverPeakDb: 17, fgbMaxCandidates: 10, sgbThreshold: 80 },
     center: 145.825, gain: 5, agc: false, device: "1:2", calibrationDb: -3.5,
     sample: "fgb.wav", useSampleProfile: false, removeDc: true, preroll: 2000,
     base: 30, range: 20, waterfallAutomatic: false, average: .8, waterfallSpeed: 2 });
   assert.deepEqual(appPreferencesSchema.parse(JSON.parse(JSON.stringify(saved))), saved);
+  assert.ok(saved.settings);
+  const { fgbMaxCandidates: _limit, ...legacySettings } = saved.settings;
+  const migrated = appPreferencesSchema.parse({ ...saved, settings: legacySettings });
+  assert.equal(migrated.settings?.fgbMaxCandidates, 4);
+  assert.equal(migrated.settings?.fgbOverPeakDb, 17);
   assert.equal("device" in saved, false, "Legacy USB addresses must not survive loading or saving");
   for (const invalid of [{ center: 99 }, { gain: 12 }, { average: 0 }, { waterfallSpeed: 5 },
-    { settings: { ...settings, fgbMaxErrors: 4 } }])
+    { settings: { ...settings, fgbMaxErrors: 4 } }, { settings: { ...settings, fgbMaxCandidates: 11 } }])
     assert.equal(appPreferencesSchema.safeParse({ ...saved, ...invalid }).success, false);
 });
 

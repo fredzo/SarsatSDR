@@ -29,12 +29,13 @@ void check(cs_status code, const cs_error& error) {
 using Worker = std::unique_ptr<cs_worker, decltype(&cs_worker_destroy)>;
 using Result = std::unique_ptr<cs_result, decltype(&cs_result_destroy)>;
 Worker create(std::size_t capacity, std::size_t input = 1, std::size_t output = 1, bool sgb = false,
-              std::uint32_t rate = 230400) {
+              std::uint32_t rate = 230400, int fgb_max_candidates = 4) {
     cs_config config{};
     cs_error error{};
     check(cs_config_init(&config, sizeof(config), &error), error);
     config.fgb = sgb ? 0u : 1u;
     config.sgb = sgb ? 1u : 0u;
+    config.fgb_max_candidates = fgb_max_candidates;
     cs_worker* worker = nullptr;
     check(cs_worker_create(&config, rate, capacity, input, output, &worker, &error), error);
     return Worker(worker, cs_worker_destroy);
@@ -136,6 +137,42 @@ void diagnostics_without_frames(const char* path) {
             "Diagnostic snapshot unexpectedly created a frame event");
 }
 
+void simultaneous_fgb_candidates() {
+    constexpr std::uint32_t rate = 230400;
+    for (const int limit : {1, 4, 10}) {
+        auto worker = create(rate, 1, 1, false, rate, limit);
+        cs_error error{};
+        std::vector<cospas::Sample> input(rate);
+        check(cs_worker_submit(worker.get(), 0, CS_IQ_CF32, input.data(),
+                               input.size() * sizeof(cospas::Sample), &error), error);
+        wait_until([&] { return stats(worker.get()).processed_blocks == 1; });
+        input.resize(rate / 10);
+        for (std::size_t n = 0; n < input.size(); ++n)
+            for (int carrier = 0; carrier < 10; ++carrier) {
+                const double phase = 2 * std::numbers::pi * (-27000 + 6000 * carrier) * double(n) / rate;
+                input[n] += std::polar(.05f, float(phase));
+            }
+        check(cs_worker_submit(worker.get(), rate, CS_IQ_CF32, input.data(),
+                               input.size() * sizeof(cospas::Sample), &error), error);
+        wait_until([&] { return stats(worker.get()).processed_blocks == 2; });
+        cs_acquisition snapshot{};
+        {
+            NoAllocations guard;
+            check(cs_worker_get_acquisition(worker.get(), &snapshot, sizeof(snapshot), &error), error);
+        }
+        const auto count = std::count_if(std::begin(snapshot.fgb_channels), std::end(snapshot.fgb_channels),
+                                         [](const auto& channel) { return channel.active; });
+        require(count == limit, "Worker did not enforce the configured simultaneous FGB candidate limit");
+        for (const auto& channel : snapshot.fgb_channels) {
+            if (!channel.active) continue;
+            const double carrier = std::round((channel.frequency_offset_hz + 27000) / 6000);
+            require(carrier >= 0 && carrier <= 9 &&
+                    std::abs(channel.frequency_offset_hz - (-27000 + 6000 * carrier)) < 100,
+                    "Simultaneous FGB acquisition lost a carrier or tracked a spur");
+        }
+    }
+}
+
 void fgb_acquisition_without_frames(const char* path) {
     auto signal = cospas::read_wav(path);
     const auto warmup = std::size_t(signal.sample_rate_hz) * 2;
@@ -146,7 +183,7 @@ void fgb_acquisition_without_frames(const char* path) {
     const auto capacity = signal.sample_rate_hz / 20;
     auto worker = create(capacity, 1, 1, false, signal.sample_rate_hz);
     cs_error error{};
-    std::array<bool, 4> acquired{};
+    std::array<bool, CS_FGB_CHANNEL_COUNT> acquired{};
     bool before_frame = false, ended = false;
     std::size_t blocks = 0, frames = 0;
     for (std::size_t position = 0; position < input.size();) {
@@ -305,6 +342,7 @@ int main(int argc, char** argv) {
         backpressure_and_stop();
         finish_and_error();
         diagnostics_without_frames(argv[1]);
+        simultaneous_fgb_candidates();
         fgb_acquisition_without_frames(argv[2]);
         real_capture(argv[1]);
         real_capture(argv[1], 10000);

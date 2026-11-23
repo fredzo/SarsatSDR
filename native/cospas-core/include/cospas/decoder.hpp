@@ -12,6 +12,7 @@ namespace cospas {
 
 using Sample = std::complex<float>;
 using Bits = std::vector<std::uint8_t>;
+inline constexpr std::size_t fgb_channel_count = 10;
 
 struct BchResult {
     Bits bits;
@@ -61,6 +62,7 @@ struct DecoderSettings {
     bool show_fgb_bch_failures{false};
     bool fgb_normal{true};
     bool fgb_self_test{true};
+    int fgb_max_candidates{4};
 };
 
 struct Frame {
@@ -83,7 +85,7 @@ struct Frame {
 
 struct DecodeDiagnostics {
     struct FgbChannel { bool active{}; double frequency_hz{}; float level_dbfs{}, above_noise_db{}; };
-    std::array<FgbChannel, 4> fgb_channels{};
+    std::array<FgbChannel, fgb_channel_count> fgb_channels{};
     struct FgbTrial { double time_seconds{}, frequency_hz{}; int votes{}, offset{}; };
     float fgb_max_peak_db{};
     std::uint64_t fgb_candidates{};

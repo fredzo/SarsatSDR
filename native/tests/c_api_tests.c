@@ -27,6 +27,21 @@ int main(void) {
     CHECK(cs_config_init(&config, sizeof(config) - 1, &error) == CS_INVALID_ARGUMENT);
     CHECK(error.code == CS_INVALID_ARGUMENT && error.message[0]);
     CHECK(cs_config_init(&config, sizeof(config), &error) == CS_OK);
+    CHECK(config.fgb_max_candidates == 4);
+    for (n = 0; n < 2; ++n) {
+        config.fgb_max_candidates = n ? 11 : 0;
+        CHECK(cs_decode_iq(&config, CS_IQ_CF32, 230400, NULL, 0, &result, &error) == CS_INVALID_ARGUMENT);
+    }
+    config.fgb_max_candidates = 99;
+    CHECK(cs_config_init(&config, offsetof(cs_config, fgb_max_candidates), &error) == CS_OK);
+    CHECK(config.fgb_max_candidates == 99);
+    config.fgb_normal = 2;
+    CHECK(cs_decode_iq(&config, CS_IQ_CF32, 230400, NULL, 0, &result, &error) == CS_INVALID_ARGUMENT);
+    config.fgb_normal = 0;
+    CHECK(cs_decode_iq(&config, CS_IQ_CF32, 230400, NULL, 0, &result, &error) == CS_OK);
+    cs_result_destroy(result);
+    result = NULL;
+    CHECK(cs_config_init(&config, sizeof(config), &error) == CS_OK);
     config.fgb_normal = 2;
     config.fgb_self_test = 2;
     CHECK(cs_decode_iq(&config, CS_IQ_CF32, 230400, NULL, 0, &result, &error) == CS_INVALID_ARGUMENT);
@@ -80,7 +95,7 @@ int main(void) {
             CHECK(cs_result_get_acquisition(result, &acquisition, sizeof(acquisition) - 1, &error) == CS_INVALID_ARGUMENT);
             CHECK(cs_result_get_acquisition(result, NULL, sizeof(acquisition), &error) == CS_INVALID_ARGUMENT);
             CHECK(cs_result_get_acquisition(result, &acquisition, sizeof(acquisition), &error) == CS_OK);
-            for (channel = 0; channel < 4; ++channel) CHECK(!acquisition.fgb_channels[channel].active);
+            for (channel = 0; channel < CS_FGB_CHANNEL_COUNT; ++channel) CHECK(!acquisition.fgb_channels[channel].active);
         }
         CHECK(cs_result_get_frame(result, 0, &frame, sizeof(frame), &error) == CS_OUT_OF_RANGE);
         {
@@ -189,7 +204,7 @@ int main(void) {
             CHECK(cs_worker_get_acquisition(NULL, &acquisition, sizeof(acquisition), &error) == CS_INVALID_ARGUMENT);
             CHECK(cs_worker_get_acquisition(worker, &acquisition, sizeof(acquisition) - 1, &error) == CS_INVALID_ARGUMENT);
             CHECK(cs_worker_get_acquisition(worker, &acquisition, sizeof(acquisition), &error) == CS_OK);
-            for (n = 0; n < 4; ++n) CHECK(!acquisition.fgb_channels[n].active);
+            for (n = 0; n < CS_FGB_CHANNEL_COUNT; ++n) CHECK(!acquisition.fgb_channels[n].active);
         }
         CHECK(strlen(diagnostics.tables_sha256) == 64 && diagnostics.frame_count == 0);
         CHECK(cs_worker_poll(worker, &event, sizeof(event) - 1, &error) == CS_INVALID_ARGUMENT);

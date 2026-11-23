@@ -202,13 +202,15 @@ test("UI command validation preserves native defaults and constrains sample acce
   assert.equal(startSchema.safeParse({ ...command, bus: 1 }).success, false);
   assert.equal(startSchema.safeParse({ ...command, settings: { ...settings, sgbThreshold: 513 } }).success, false);
   assert.equal(startSchema.safeParse({ ...command, settings: { ...settings, sgbThreshold: 0 } }).success, true);
-  const tuned = { ...settings, fgbZeta: .03, fgbAverage: .15, fgbRuntimeMs: 575,   fgbMaxErrors: 1, fgbHeaderErrors: 2, fgbBch2MaxErrors: 1,
+  assert.equal(settings.fgbMaxCandidates, 4);
+  const tuned = { ...settings, fgbZeta: .03, fgbAverage: .15, fgbRuntimeMs: 575, fgbMaxCandidates: 10, fgbMaxErrors: 1, fgbHeaderErrors: 2, fgbBch2MaxErrors: 1,
     sgbFilter: .25, sgbFrequencyGain: 1.75, sgbFeedback: 3, sgbMaxErrors: 2, searchDepth: 5 };
   for (const source of ["sample", "rtl"] as const) {
     const mapped = argumentsFor(startSchema.parse({ ...command, source, settings: tuned }), ["sgb.wav"], root);
     for (const [option, expected] of [
       ["--fgb-zeta", ".03"], ["--fgb-average", ".15"], ["--fgb-max-errors", "1"],
       ["--fgb-runtime-ms", "575"], ["--fgb-header-errors", "2"], ["--fgb-bch2-max-errors", "1"],
+      ["--fgb-max-candidates", "10"],
       ["--sgb-filter", ".25"], ["--sgb-frequency-gain", "1.75"], ["--sgb-max-errors", "2"],
       ["--sgb-feedback", "3"],
       ["--search-depth", "5"],
@@ -219,6 +221,7 @@ test("UI command validation preserves native defaults and constrains sample acce
   }
   for (const invalid of [{ fgbZeta: -1 }, { fgbAverage: 1.01 }, { fgbMaxErrors: 4 },
     { fgbRuntimeMs: 0 }, { fgbRuntimeMs: -1 }, { fgbRuntimeMs: 550.5 },
+    { fgbMaxCandidates: 0 }, { fgbMaxCandidates: 11 }, { fgbMaxCandidates: 4.5 },
     { sgbFilter: -0.01 }, { sgbFrequencyGain: -1 }, { sgbFeedback: -1 }, { sgbFeedback: Infinity },
     { sgbMaxErrors: 7 }, { searchDepth: 2 },
     { searchDepth: 10 }, { searchDepth: 3.5 }, { fgbMaxErrors: 1.5 }, { fgbHeaderErrors: 4 }, { fgbHeaderErrors: 1.5 }, { fgbBch2MaxErrors: 3 }])

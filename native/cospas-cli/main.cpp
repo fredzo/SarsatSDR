@@ -212,6 +212,7 @@ bool setting_option(std::string_view arg, int& n, int argc, char** argv, cs_conf
         else if (arg == "--fgb-zeta") s.fgb_zeta = number<float>(argv[++n], arg);
         else if (arg == "--fgb-average") s.fgb_average = number<float>(argv[++n], arg);
         else if (arg == "--fgb-runtime-ms") s.fgb_runtime_ms = number<std::int32_t>(argv[++n], arg);
+        else if (arg == "--fgb-max-candidates") s.fgb_max_candidates = number<std::int32_t>(argv[++n], arg);
         else if (arg == "--fgb-max-errors") s.fgb_max_errors = number<int>(argv[++n], arg);
         else if (arg == "--fgb-header-errors") s.fgb_header_errors = number<int>(argv[++n], arg);
         else if (arg == "--fgb-bch2-max-errors") s.fgb_bch2_max_errors = number<int>(argv[++n], arg);
@@ -252,6 +253,7 @@ constexpr std::string_view usage =
     "  --fgb-zeta N            PLL Zeta (default 0.01)\n"
     "  --fgb-average N         detection average, 0..1 (default 0.045)\n"
     "  --fgb-runtime-ms N      channel RunTime, positive ms (default 550)\n"
+    "  --fgb-max-candidates N  simultaneous FGB candidates, 1..10 (default 4)\n"
     "  --fgb-max-errors N      FGB BCH-1 correction limit, 0..3 (default 3)\n"
     "  --fgb-bch2-max-errors N FGB BCH-2 correction limit, 0..2 (default 2)\n"
     "  --fgb-header-errors N   FGB 24-bit header bit errors allowed, 0..3 (default 2)\n"
@@ -577,6 +579,7 @@ int cospas_cli_run(int argc, char** argv) {
                       << ",\"fgbAlpha\":" << s.fgb_alpha << ",\"fgbBeta\":" << s.fgb_beta
                       << ",\"fgbZeta\":" << s.fgb_zeta << ",\"fgbAverage\":" << s.fgb_average
                       << ",\"fgbRuntimeMs\":" << s.fgb_runtime_ms
+                      << ",\"fgbMaxCandidates\":" << s.fgb_max_candidates
                       << ",\"fgbMaxErrors\":" << s.fgb_max_errors
                       << ",\"fgbHeaderErrors\":" << s.fgb_header_errors
                       << ",\"fgbBch2MaxErrors\":" << s.fgb_bch2_max_errors

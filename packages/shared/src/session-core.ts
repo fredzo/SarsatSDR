@@ -21,6 +21,7 @@ export function argumentsFor(command: StartCommand, samples: string[], samplePat
   args.push("--fgb-alpha", String(s.fgbAlpha), "--fgb-beta", String(s.fgbBeta),
     "--fgb-zeta", String(s.fgbZeta), "--fgb-average", String(s.fgbAverage),
     "--fgb-runtime-ms", String(s.fgbRuntimeMs),
+    "--fgb-max-candidates", String(s.fgbMaxCandidates),
     "--fgb-max-errors", String(s.fgbMaxErrors), "--fgb-header-errors", String(s.fgbHeaderErrors),
     "--fgb-bch2-max-errors", String(s.fgbBch2MaxErrors),
     "--fgb-over-peak", String(s.fgbOverPeakDb), "--sgb-threshold", String(s.sgbThreshold),

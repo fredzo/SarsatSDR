@@ -30,7 +30,7 @@ public:
             flush();
             channel_ = -1;
         }
-        for (int n = 0; n < 4; ++n) {
+        for (int n = 0; n < int(std::size(acquisition.fgb_channels)); ++n) {
             const auto& candidate = acquisition.fgb_channels[n];
             if (candidate.active && std::isfinite(candidate.level_dbfs) &&
                 std::abs(candidate.frequency_offset_hz + center_offset_) < input_rate_ * .5 &&

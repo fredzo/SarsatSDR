@@ -20,7 +20,8 @@
 extern "C" {
 #endif
 
-#define CS_ABI_VERSION 1u
+#define CS_ABI_VERSION 2u
+#define CS_FGB_CHANNEL_COUNT 10u
 
 typedef int32_t cs_status;
 enum {
@@ -73,6 +74,7 @@ typedef struct cs_config {
     uint32_t show_fgb_bch_failures; /* ABI v1 tail extension; older configurations use 0. */
     uint32_t fgb_normal; /* ABI v1 tail extension; older configurations enable both FGB modes. */
     uint32_t fgb_self_test;
+    int32_t fgb_max_candidates; /* ABI v2 tail extension, 1..10; older configurations use 4. */
 } cs_config;
 
 typedef struct cs_bch_status {
@@ -127,8 +129,8 @@ typedef struct cs_fgb_channel {
 } cs_fgb_channel;
 
 typedef struct cs_acquisition {
-    cs_fgb_channel fgb_channels[4];
-    float fgb_above_noise_db[4];
+    cs_fgb_channel fgb_channels[CS_FGB_CHANNEL_COUNT];
+    float fgb_above_noise_db[CS_FGB_CHANNEL_COUNT];
 } cs_acquisition;
 
 enum {

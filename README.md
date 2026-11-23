@@ -521,7 +521,12 @@ Le header C++ public est `cospas/decoder.hpp`.
 Les champs finaux de configuration et `cs_frame.header_errors` etendent ABI v1
 avec controle de taille. Le membre de diagnostic `tables_sha256` conserve la
 taille et la position memoire du champ de 65 caracteres. Les consommateurs C/C++
-doivent etre recompiles avec les noms publics actuels.
+doivent etre recompiles avec les noms publics actuels. L'ABI courante est v2 :
+les tableaux d'acquisition peuvent contenir jusqu'a 10 canaux FGB simultanes,
+avec la telemetrie, les marqueurs FFT et la selection audio FM correspondants.
+Le reglage FGB « max candidates » est sauvegarde dans Settings : 4 par defaut,
+de 1 a 10, applicable a la reception et au lecteur, y compris avec un profil valide.
+En ligne de commande : `--fgb-max-candidates N`.
 Les plans FFTW imposent de serialiser creation et appels par lots.
 
 ## Validation

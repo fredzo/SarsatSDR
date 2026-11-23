@@ -135,6 +135,13 @@ int main() {
             if (line.find("\"channel\":0") == std::string::npos)
                 throw std::runtime_error("FM squelch did not stay on the remaining candidate");
         } while (std::getline(chunks, line));
+        audio.str("");
+        candidates.fgb_channels[9] = {1, 2000, -20};
+        fm.select(candidates, 2.4);
+        fm.push(strongest);
+        fm.flush();
+        if (audio.str().find("\"channel\":9") == std::string::npos)
+            throw std::runtime_error("FM squelch did not select the tenth FGB candidate");
         std::cout << "Native UI spectrum: 10 Hz, 1024 bins, RF mapping and dBFS verified\n";
         return 0;
     } catch (const std::exception& error) {

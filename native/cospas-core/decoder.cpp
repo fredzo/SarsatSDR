@@ -328,6 +328,9 @@ public:
     FgbDecoder(const DecoderSettings& configuration, DecodeDiagnostics& counters)
         : settings(configuration), diagnostics(counters), fft(2048),
           channels{FgbChannel(settings, diagnostics), FgbChannel(settings, diagnostics),
+                   FgbChannel(settings, diagnostics), FgbChannel(settings, diagnostics),
+                   FgbChannel(settings, diagnostics), FgbChannel(settings, diagnostics),
+                   FgbChannel(settings, diagnostics), FgbChannel(settings, diagnostics),
                    FgbChannel(settings, diagnostics), FgbChannel(settings, diagnostics)} {
         // FFT window: twice a 1024-point Blackman, then 1024 zeros.
         for (std::size_t n = 0; n < window.size() / 2; ++n)
@@ -343,6 +346,7 @@ public:
     }
     void process(std::span<const Sample> block, std::vector<Frame>& frames) {
         if (block.size() != 1600) throw std::logic_error("Invalid FGB processing block");
+        const auto active_channels = std::span(channels).first(std::size_t(settings.fgb_max_candidates));
         for (std::size_t n = 0; n < 800; ++n) spectrum_buffer[available + n] = block[n * 2];
         available += 800;
         if (available >= 2048) {
@@ -357,13 +361,13 @@ public:
                     (1 - settings.fgb_average) * average[std::size_t(n)];
                 difference[std::size_t(n)] = power[std::size_t(n)] - average[std::size_t(n)];
             }
-            for (auto& channel : channels) {
+            for (auto& channel : active_channels) {
                 if (channel.busy()) continue;
                 int best = 406;
                 float peak = -100;
                 for (int n = 406; n <= 1650; ++n) {
                     const double frequency = (n - 1023) * 56.25;
-                    const bool occupied = std::any_of(channels.begin(), channels.end(), [&](const auto& other) {
+                    const bool occupied = std::any_of(active_channels.begin(), active_channels.end(), [&](const auto& other) {
                         return other.busy() && std::abs(other.frequency() - frequency) < 50 * 56.25;
                     });
                     if (!occupied && difference[std::size_t(n)] >= peak &&
@@ -384,7 +388,7 @@ public:
                       spectrum_buffer.begin());
             available -= 2048;
         }
-        for (auto& channel : channels) {
+        for (auto& channel : active_channels) {
             auto frame = channel.process(block);
             if (!frame) continue;
             // Several channels can lock on the same burst (spurs); keep only the first decode.
@@ -410,7 +414,7 @@ private:
     std::array<float, 2048> power{};
     std::array<float, 2048> difference{};
     std::array<float, 2048> window{};
-    std::array<FgbChannel, 4> channels;
+    std::array<FgbChannel, fgb_channel_count> channels;
     std::vector<std::pair<double, Bits>> recent;
     std::array<Sample, 2848> spectrum_buffer{};
     std::size_t available{};
@@ -594,7 +598,8 @@ void validate_settings(std::uint32_t rate, const DecoderSettings& settings) {
         settings.fgb_average > 1 || settings.sgb_filter > 1 ||
         settings.sgb_detection_threshold > 512 || settings.fgb_runtime_ms <= 0 || settings.fgb_max_errors < 0 ||
         settings.fgb_max_errors > 3 || settings.fgb_bch2_max_errors < 0 || settings.fgb_bch2_max_errors > 2 || settings.sgb_max_errors < 0 || settings.sgb_max_errors > 6 ||
-        settings.fgb_header_errors < 0 || settings.fgb_header_errors > 3)
+        settings.fgb_header_errors < 0 || settings.fgb_header_errors > 3 ||
+        settings.fgb_max_candidates < 1 || settings.fgb_max_candidates > int(fgb_channel_count))
         throw std::invalid_argument("Invalid decoder settings");
 }
 

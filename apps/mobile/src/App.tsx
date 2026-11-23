@@ -67,7 +67,7 @@ type Tab = typeof tabs[number];
 const tabIcons: Record<Tab, LucideIcon> = { Detection: RadioTower, Frames: FileText, Map: MapPin,
   Detail: FileSearch, Signal: Activity, Receiver: BoomBox, Player: FileAudio, Settings: SettingsIcon };
 const numericSettings: { key: keyof Pick<Settings, "fgbAlpha" | "fgbBeta" | "fgbOverPeakDb" |
-  "fgbZeta" | "fgbAverage" | "fgbRuntimeMs" | "fgbMaxErrors" | "fgbBch2MaxErrors" | "fgbHeaderErrors" | "sgbThreshold" | "sgbPhaseGain" |
+  "fgbZeta" | "fgbAverage" | "fgbRuntimeMs" | "fgbMaxCandidates" | "fgbMaxErrors" | "fgbBch2MaxErrors" | "fgbHeaderErrors" | "sgbThreshold" | "sgbPhaseGain" |
   "sgbFrequencyGain" | "sgbFilter" | "sgbFeedback" | "sgbMaxErrors" | "searchDepth">;
   label: string; min?: number; max?: number }[] = [
   { key: "fgbOverPeakDb", label: "FGB OverPeak · dB" },
@@ -79,6 +79,7 @@ const numericSettings: { key: keyof Pick<Settings, "fgbAlpha" | "fgbBeta" | "fgb
   { key: "fgbMaxErrors", label: "FGB BCH-1 max errors", max: 3 },
   { key: "fgbBch2MaxErrors", label: "FGB BCH-2 max errors", max: 2 },
   { key: "fgbHeaderErrors", label: "FGB header max errors", max: 3 },
+  { key: "fgbMaxCandidates", label: "FGB max candidates · 1–10", min: 1, max: 10 },
   { key: "sgbThreshold", label: "SGB Detection", max: 512 },
   { key: "sgbPhaseGain", label: "SGB PLL Alpha" },
   { key: "sgbFrequencyGain", label: "SGB PLL Beta" },
@@ -126,14 +127,22 @@ function Check({ label, value, onChange, disabled, compact }: { label: string; v
     <View style={[s.box, value && s.boxOn]}>{value && <Text style={s.tick}>✓</Text>}</View><Text style={s.small}>{label}</Text>
   </Pressable>;
 }
-function NumberField({ label, value, onChange, disabled, style, big, onFocus }: { label: string; value: number | string | undefined;
-  onChange: (value: number) => void; disabled?: boolean; style?: StyleProp<ViewStyle>; big?: boolean; onFocus?: () => void }) {
+function NumberField({ label, value, onChange, disabled, style, big, onFocus, min, max }: { label: string; value: number | string | undefined;
+  onChange: (value: number) => void; disabled?: boolean; style?: StyleProp<ViewStyle>; big?: boolean; onFocus?: () => void;
+  min?: number; max?: number }) {
   const [text, setText] = useState(value === undefined ? "" : String(value));
   useEffect(() => { if (Number(text) !== Number(value)) setText(value === undefined ? "" : String(value)); }, [value]);
   return <View style={[s.field, style]}><Text style={s.label}>{label}</Text>
     <TextInput accessibilityLabel={label} editable={!disabled} keyboardType="numeric" value={text} onFocus={onFocus}
       style={[s.input, big && s.bigInput, disabled && { opacity: .5 }]}
-      onChangeText={next => { setText(next); const n = Number(next.replace(",", ".")); if (next !== "" && Number.isFinite(n)) onChange(n); }} /></View>;
+      onBlur={() => setText(value === undefined ? "" : String(value))}
+      onChangeText={next => {
+        const n = Number(next.replace(",", "."));
+        if (next === "" || !Number.isFinite(n)) { setText(next); return; }
+        const bounded = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n));
+        setText(bounded === n ? next : String(bounded));
+        onChange(bounded);
+      }} /></View>;
 }
 function Select({ label, value, onChange, items, disabled, narrow = false }: { label: string; value: string; onChange: (value: string) => void;
   items: { label: string; value: string }[]; disabled?: boolean; narrow?: boolean }) {
@@ -825,7 +834,8 @@ export default function App() {
 
   const busy = status !== "idle";
   const sampleProfile = info?.sampleProfiles[sample];
-  const playback = info && sampleProfile ? playbackConfiguration(info.settings, sampleProfile) : null;
+  const playback = info && sampleProfile ? playbackConfiguration({ ...info.settings,
+    fgbMaxCandidates: settings?.fgbMaxCandidates ?? info.settings.fgbMaxCandidates }, sampleProfile) : null;
   const playerSettings = useSampleProfile ? playback?.settings : settings;
   const displayedSettings = tab === "Player" ? playerSettings : settings;
   function start(source: "rtl" | "sample") {
@@ -1001,7 +1011,7 @@ export default function App() {
           : useSampleProfile ? playback ? <Text style={[s.p, { fontSize: 10, lineHeight: 14, marginTop: 4 }]}>
             Active profile: {playback.settings.fgb ? "FGB" : ""}{playback.settings.fgb && playback.settings.sgb ? " + " : ""}{playback.settings.sgb ? "SGB" : ""}
             {playback.settings.fgb && `\nOverPeak ${playback.settings.fgbOverPeakDb} dB · Avg ${playback.settings.fgbAverage}` +
-              `\nRunTime ${playback.settings.fgbRuntimeMs} ms` +
+              `\nRunTime ${playback.settings.fgbRuntimeMs} ms · Candidates ${playback.settings.fgbMaxCandidates}` +
               `\nPLL Alpha ${playback.settings.fgbAlpha} · Beta ${playback.settings.fgbBeta} · Zeta ${playback.settings.fgbZeta}` +
               `\nMax errors: BCH-1 ${playback.settings.fgbMaxErrors} · BCH-2 ${playback.settings.fgbBch2MaxErrors} · Header ${playback.settings.fgbHeaderErrors}`}
             </Text>
@@ -1147,15 +1157,15 @@ export default function App() {
           <View style={s.fieldset}><Text style={s.legend}>FGB</Text>
             <View style={s.settingsGrid}>
               {numericSettings.filter(field => field.key.startsWith("fgb")).map(field => <NumberField key={field.key} style={s.setting} label={field.label} disabled={busy || !settings}
-                onFocus={revealSettingsInput}
-                value={settings?.[field.key]} onChange={value => change(field.key, Math.min(field.max ?? Infinity, Math.max(field.min ?? 0, value)))} />)}
+                onFocus={revealSettingsInput} min={field.min ?? 0} max={field.max}
+                value={settings?.[field.key]} onChange={value => change(field.key, value)} />)}
             </View>
           </View>
           <View style={s.fieldset}><Text style={s.legend}>SGB</Text>
           <View style={s.settingsGrid}>
             {numericSettings.filter(field => !field.key.startsWith("fgb")).map(field => <NumberField key={field.key} style={s.setting} label={field.label} disabled={busy || !settings}
-              onFocus={revealSettingsInput}
-              value={settings?.[field.key]} onChange={value => change(field.key, Math.min(field.max ?? Infinity, Math.max(field.min ?? 0, value)))} />)}
+              onFocus={revealSettingsInput} min={field.min ?? 0} max={field.max}
+              value={settings?.[field.key]} onChange={value => change(field.key, value)} />)}
             <Select label="PRN alignment" value={String(settings?.prnAlignment ?? 2)} disabled={busy || !settings}
               onChange={value => change("prnAlignment", Number(value))}
               items={[{ label: "Early", value: "0" }, { label: "Norm", value: "1" }, { label: "Late", value: "2" }]} />

@@ -127,10 +127,15 @@ test("Waterfall recolors stored history without resetting chronology or painting
   assert.deepEqual([...buffer.pixels.subarray(waterfallBins * 8, waterfallBins * 8 + 4)], [0, 0, 0, 255]);
 });
 
-test("Acquisition telemetry rejects invented extra channels, duplicates and invalid levels", () => {
+test("Acquisition telemetry accepts ten FGB candidates and rejects extra channels, duplicates and invalid levels", () => {
   const channel = { channel: 0, frequencyOffsetHz: -24975, levelDbfs: -50 };
   assert.equal(nativeEventSchema.safeParse({ type: "acquisition", channels: [channel] }).success, true);
-  for (const channels of [[channel, channel], [{ ...channel, channel: 4 }],
-    [{ ...channel, levelDbfs: Infinity }], Array(5).fill(channel)])
+  const simultaneous = Array.from({ length: 10 }, (_, n) =>
+    ({ ...channel, channel: n, frequencyOffsetHz: -27000 + 6000 * n }));
+  assert.equal(nativeEventSchema.safeParse({ type: "acquisition", channels: simultaneous }).success, true);
+  for (const channels of [[channel, channel], [{ ...channel, channel: 10 }],
+    [{ ...channel, levelDbfs: Infinity }], [...simultaneous, channel]])
     assert.equal(nativeEventSchema.safeParse({ type: "acquisition", channels }).success, false);
+  assert.equal(nativeEventSchema.safeParse({ type: "fmAudio", channel: 9, pcm: "AAA=" }).success, true);
+  assert.equal(nativeEventSchema.safeParse({ type: "fmAudio", channel: 10, pcm: "AAA=" }).success, false);
 });

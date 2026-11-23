@@ -68,7 +68,8 @@ bool flag(uint32_t value) {
 }
 
 cospas::DecoderSettings settings(const cs_config& config) {
-    if ((config.struct_size != sizeof(cs_config) && config.struct_size != offsetof(cs_config, fgb_normal) &&
+    if ((config.struct_size != sizeof(cs_config) && config.struct_size != offsetof(cs_config, fgb_max_candidates) &&
+         config.struct_size != offsetof(cs_config, fgb_normal) &&
          config.struct_size != offsetof(cs_config, show_fgb_bch_failures) &&
          config.struct_size != offsetof(cs_config, fgb_bch2_max_errors) &&
          config.struct_size != offsetof(cs_config, fgb_header_errors) &&
@@ -100,10 +101,12 @@ cospas::DecoderSettings settings(const cs_config& config) {
     if (config.struct_size > offsetof(cs_config, fgb_header_errors)) result.fgb_header_errors = config.fgb_header_errors;
     if (config.struct_size > offsetof(cs_config, fgb_bch2_max_errors)) result.fgb_bch2_max_errors = config.fgb_bch2_max_errors;
     if (config.struct_size > offsetof(cs_config, show_fgb_bch_failures)) result.show_fgb_bch_failures = flag(config.show_fgb_bch_failures);
-    if (config.struct_size == sizeof(cs_config)) {
+    if (config.struct_size > offsetof(cs_config, fgb_normal)) {
         result.fgb_normal = flag(config.fgb_normal);
         result.fgb_self_test = flag(config.fgb_self_test);
     }
+    if (config.struct_size > offsetof(cs_config, fgb_max_candidates))
+        result.fgb_max_candidates = config.fgb_max_candidates;
     return result;
 }
 
@@ -150,6 +153,7 @@ void convert(cs_iq_format format, const void* input, std::span<cospas::Sample> o
 }
 
 void describe(cs_result* result, const cospas::DecodeDiagnostics& diagnostics) {
+    static_assert(CS_FGB_CHANNEL_COUNT == cospas::fgb_channel_count);
     for (size_t n = 0; n < diagnostics.fgb_channels.size(); ++n) {
         const auto& channel = diagnostics.fgb_channels[n];
         result->acquisition.fgb_channels[n] = {channel.active, channel.frequency_hz, channel.level_dbfs};
@@ -373,7 +377,8 @@ extern "C" {
 uint32_t CS_CALL cs_abi_version(void) { return CS_ABI_VERSION; }
 
 cs_status CS_CALL cs_config_init(cs_config* config, size_t config_size, cs_error* error) {
-    if (!config || (config_size < sizeof(cs_config) && config_size != offsetof(cs_config, fgb_normal) &&
+    if (!config || (config_size < sizeof(cs_config) && config_size != offsetof(cs_config, fgb_max_candidates) &&
+                    config_size != offsetof(cs_config, fgb_normal) &&
                     config_size != offsetof(cs_config, show_fgb_bch_failures) &&
                     config_size != offsetof(cs_config, fgb_bch2_max_errors) &&
                     config_size != offsetof(cs_config, fgb_header_errors) &&
@@ -389,7 +394,7 @@ cs_status CS_CALL cs_config_init(cs_config* config, size_t config_size, cs_error
         defaults.prn_alignment, defaults.sgb_filter, defaults.sgb_phase_gain,
         defaults.sgb_frequency_gain, defaults.sgb_max_errors,         defaults.sgb_feedback, defaults.fgb_header_errors,
                 defaults.fgb_bch2_max_errors, defaults.show_fgb_bch_failures,
-                defaults.fgb_normal, defaults.fgb_self_test
+                defaults.fgb_normal, defaults.fgb_self_test, defaults.fgb_max_candidates
     };
     std::memcpy(config, &initialized, initialized.struct_size);
     return status(error, CS_OK, "");
