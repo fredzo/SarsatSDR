@@ -991,14 +991,7 @@ export default function App() {
             <Check label="Auto reload countdown" value={reception.autoReloadCountdown} disabled={!preferencesReady}
               onChange={value => changeReception("autoReloadCountdown", value)} />
           </View>
-          <Text style={s.p}>Filters hide frames only; all received frames remain stored (latest 200) and included in JSON exports.
-            System frame filtering covers FGB ORB and SGB SYSTM.
-            The counter counts up at acquisition start and after countdown expiry without auto reload.
-            Each unfiltered FGB starts a countdown. Long press the spinner to count up from zero until the next unfiltered FGB.
-            Beeps at 5, 4, 3, 2 and 1 seconds use notification volume, independently of frame audio notifications.
-            Duration: 1–3600 seconds; changes apply to the next countdown.</Text>
         </View>
-        <Text style={s.p}>Receiver and DSP settings below apply on next start.</Text>
         <View style={s.fieldset}><Text style={s.legend}>RTL-SDR · 921600 complex samples/s · Bias-T OFF</Text>
           <View style={s.settingsGrid}>
             <Select label="USB device" value={device} onChange={setDevice} disabled={busy || !settings}
@@ -1015,18 +1008,12 @@ export default function App() {
               items={[{ label: "Early", value: "0" }, { label: "Norm", value: "1" }, { label: "Late", value: "2" }]} />
             <View style={s.setting}><Check label="SGB Quality Check" value={settings?.qualityCheck ?? true} disabled={busy || !settings} onChange={value => change("qualityCheck", value)} /></View>
             <View style={s.setting}><Check label="Show invalid / over-limit SGB BCH" value={settings?.showBchFailures ?? false} disabled={busy || !settings} onChange={value => change("showBchFailures", value)} /></View>
-          </View></View>
+          </View>
+          <Text style={s.p}>Search Depth: ±{((settings?.searchDepth ?? 9) * 1.2 / 9).toFixed(3)} kHz.</Text>
+        </View>
         <View style={s.row}>
           <Button icon={Usb} title="REFRESH USB" disabled={busy} onPress={() => { void refresh().catch(reason => setError(String(reason))); }} />
           <Button icon={RefreshCw} title="NATIVE DEFAULTS" disabled={busy || !info} onPress={() => info && setSettings(info.settings)} /></View>
-        <Text style={s.p}>DSP defaults are read from the C API. Initial gain preset: 8.
-          Search Depth: ±{((settings?.searchDepth ?? 9) * 1.2 / 9).toFixed(3)} kHz.
-          Settings apply to RTL-SDR reception and manual WAV playback; validated capture profiles are independent.
-          Stop the session before changing DSP settings. Receiver and DSP settings are not saved yet.</Text>
-        <Text style={s.p}>RTL calibration adds an offset to FFT and Full BW without changing decoding.
-          With a known RF source, enter known level minus displayed level. Default: 0 dB; adjust for each device.
-          Without a calibrated source, dBm values are estimates. WAV levels remain relative.
-          WF Auto follows the noise floor slowly; disable it to use manual Base/Range.</Text>
       </View>}
     </ScrollView>}
     <View style={s.nav}>
