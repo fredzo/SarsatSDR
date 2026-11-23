@@ -40,7 +40,7 @@ jobs:
           }
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=${tag}\nversion=${tag.slice(1)}\n`);
           NODE
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: refs/tags/${{ steps.version.outputs.tag }}
           persist-credentials: false
