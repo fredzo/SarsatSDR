@@ -11,5 +11,7 @@ object NativeEngine {
 
   external fun run(arguments: Array<String>, sink: Sink): Int
   external fun stop()
+  external fun startRecording(descriptor: Int)
+  external fun stopRecording()
   external fun supportedIds(): IntArray
 }

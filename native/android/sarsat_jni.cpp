@@ -1,5 +1,6 @@
 #include "telemetry.hpp"
 #include "dsp_tables.hpp"
+#include "iq_recording.hpp"
 
 #include <jni.h>
 
@@ -8,6 +9,7 @@
 #include <streambuf>
 #include <string>
 #include <vector>
+#include <unistd.h>
 
 int cospas_cli_run(int argc, char** argv);
 
@@ -87,6 +89,13 @@ Java_expo_modules_sarsatnative_NativeEngine_run(JNIEnv* env, jobject, jobjectArr
         auto* old_out = std::cout.rdbuf(&out);
         auto* old_err = std::cerr.rdbuf(&err);
         code = cospas_cli_run(int(argv.size()), argv.data());
+        if (values.size() > 1 && values[1] == "receive") {
+            try { cospas::iq_recorder().finish_session(); }
+            catch (const std::exception& error) {
+                std::cerr << "I/Q recording: " << error.what() << '\n';
+                code = 1;
+            }
+        }
         std::cout.flush();
         std::cerr.flush();
         std::cout.rdbuf(old_out);
@@ -106,4 +115,28 @@ extern "C" JNIEXPORT jintArray JNICALL Java_expo_modules_sarsatnative_NativeEngi
     const auto result = env->NewIntArray(jsize(ids.size()));
     env->SetIntArrayRegion(result, 0, jsize(ids.size()), ids.data());
     return result;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_expo_modules_sarsatnative_NativeEngine_startRecording(JNIEnv* env, jobject, jint descriptor) {
+    try {
+        const int copied = dup(descriptor);
+        if (copied < 0) throw std::runtime_error("Could not duplicate I/Q recording descriptor");
+        auto* file = fdopen(copied, "w+b");
+        if (!file) {
+            close(copied);
+            throw std::runtime_error("Could not open I/Q WAV output");
+        }
+        cospas::iq_recorder().start(file);
+    } catch (const std::exception& error) {
+        env->ThrowNew(env->FindClass("java/io/IOException"), error.what());
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_expo_modules_sarsatnative_NativeEngine_stopRecording(JNIEnv* env, jobject) {
+    try { cospas::iq_recorder().stop(); }
+    catch (const std::exception& error) {
+        env->ThrowNew(env->FindClass("java/io/IOException"), error.what());
+    }
 }

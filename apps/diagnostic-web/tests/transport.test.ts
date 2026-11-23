@@ -19,6 +19,36 @@ async function defaults() {
   return settingsSchema.parse(JSON.parse(result.stdout));
 }
 
+test("Recorded WAV center metadata reaches playback and spectrum frequencies", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "sarsat-recording-"));
+  try {
+    const centerHz = 145825123, rate = 230400;
+    const comment = Buffer.from(`SarsatSDR centerHz=${centerHz}\0`);
+    const padded = comment.length + (comment.length & 1);
+    const dataSize = rate / 5 * 4;
+    const header = Buffer.alloc(64 + padded);
+    header.write("RIFF"); header.writeUInt32LE(header.length - 8 + dataSize, 4); header.write("WAVEfmt ", 8);
+    header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(2, 22);
+    header.writeUInt32LE(rate, 24); header.writeUInt32LE(rate * 4, 28);
+    header.writeUInt16LE(4, 32); header.writeUInt16LE(16, 34);
+    header.write("LIST", 36); header.writeUInt32LE(12 + padded, 40);
+    header.write("INFOICMT", 44); header.writeUInt32LE(comment.length, 52); comment.copy(header, 56);
+    header.write("data", 56 + padded); header.writeUInt32LE(dataSize, 60 + padded);
+    const path = resolve(directory, "capture.wav");
+    await writeFile(path, Buffer.concat([header, Buffer.alloc(dataSize)]));
+    const result = await execute(executable, ["decode", "--input", path, "--events"]).catch(error => {
+      if (error.code === 2) return { stdout: String(error.stdout) };
+      throw error;
+    });
+    const events = result.stdout.trim().split(/\r?\n/).map(line => nativeEventSchema.parse(JSON.parse(line)));
+    const session = events.find(event => event.type === "session");
+    assert.equal(session?.centerHz, centerHz);
+    const spectra = events.filter(event => event.type === "spectrum");
+    assert.ok(spectra.length > 0);
+    for (const spectrum of spectra) assert.equal(spectrum.startHz, centerHz - 50000);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test("FGB mode controls reach the native decoder and independently select normal and self-test frames", async () => {
   const sample = "cnes-long-1.wav";
   const profiles = playbackProfilesSchema.parse(JSON.parse(await readFile(resolve(root, "samples", "playback-profiles.json"), "utf8")));

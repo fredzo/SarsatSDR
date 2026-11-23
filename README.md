@@ -437,7 +437,16 @@ en defilant vers le bas. Saisir le centre en MHz puis valider avec le bouton
 de reglage ; en reception, l'acquisition redemarre proprement a la nouvelle frequence.
 Les trames conservees gardent leur frequence de reception d'origine.
 Player utilise le meme partage 75/25, sans defilement, avec la progression
-sur toute la largeur en bas. Les captures WAV gardent leur centre de 406,050 MHz.
+sur toute la largeur en bas. Les samples fournis utilisent un centre de 406,050 MHz.
+Pendant une reception RTL-SDR, PLAY devient RECORD (rouge). Sur Android 10+,
+RECORD enregistre le flux I/Q en WAV stereo PCM 16 bits a 921600 echantillons/s,
+dans `Download/SarsatSDR/capture-AAAA-MM-JJ_HH-mm-ss-SSS.wav`.
+STOP finalise d'abord le WAV sans interrompre la reception ; un second STOP
+arrete la reception. L'arret du recepteur, une reconnexion ou un changement
+de frequence finalise aussi la capture. L'offset tuner est compense et le centre
+enregistre dans le WAV est repris a la lecture via OPEN WAV.
+Les fichiers RIFF/WAV sont limites a 4 Gio (environ 19 minutes) ; une erreur
+d'ecriture est signalee, la reception s'arrete et la capture incomplete n'est pas publiee.
 Choisir une capture puis `PLAY`. Le profil valide, actif par
 defaut, applique DC, prechauffage et PLL selon `samples/playback-profiles.json`,
 sans changer les reglages de reception radio. Le mode manuel utilise Settings.

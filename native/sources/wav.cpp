@@ -1,10 +1,12 @@
 #include "wav.hpp"
 
 #include <bit>
+#include <charconv>
 #include <cmath>
 #include <fstream>
 #include <limits>
 #include <stdexcept>
+#include <string_view>
 
 namespace cospas {
 namespace {
@@ -34,6 +36,7 @@ WavSignal read_wav(const std::filesystem::path& path) {
     if (riff_end > file_size || riff_end < 12) throw std::runtime_error("Invalid RIFF size");
     std::uint16_t format = 0, channels = 0, bits = 0, alignment = 0;
     std::uint32_t rate = 0;
+    std::optional<std::uint32_t> center_hz;
     std::uint64_t data_offset = 0, data_size = 0, offset = 12;
     while (offset + 8 <= riff_end) {
         input.seekg(static_cast<std::streamoff>(offset));
@@ -50,6 +53,28 @@ WavSignal read_wav(const std::filesystem::path& path) {
             rate = u32(header.data() + 4);
             alignment = u16(header.data() + 12);
             bits = u16(header.data() + 14);
+        } else if (id == "LIST" && size >= 4 && size <= 4096) {
+            std::vector<unsigned char> info(size);
+            read(input, info.data(), info.size());
+            if (std::string(reinterpret_cast<char*>(info.data()), 4) == "INFO") {
+                for (std::size_t p = 4; p + 8 <= info.size();) {
+                    const auto length = u32(info.data() + p + 4);
+                    if (length > info.size() - p - 8) throw std::runtime_error("Invalid WAV INFO chunk");
+                    if (std::string(reinterpret_cast<char*>(info.data() + p), 4) == "ICMT") {
+                        const std::string_view comment(reinterpret_cast<char*>(info.data() + p + 8), length);
+                        constexpr std::string_view prefix = "SarsatSDR centerHz=";
+                        if (comment.starts_with(prefix)) {
+                            const auto value = comment.substr(prefix.size(), comment.find('\0') - prefix.size());
+                            std::uint32_t hz = 0;
+                            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), hz);
+                            if (error != std::errc{} || end != value.data() + value.size() || hz < 100000000 || hz > 999000000)
+                                throw std::runtime_error("Invalid I/Q WAV center frequency");
+                            center_hz = hz;
+                        }
+                    }
+                    p += 8 + length + (length & 1);
+                }
+            }
         } else if (id == "data") {
             if (data_offset) throw std::runtime_error("Multiple WAV data chunks are unsupported");
             data_offset = body;
@@ -61,7 +86,7 @@ WavSignal read_wav(const std::filesystem::path& path) {
         !((format == 1 && (bits == 8 || bits == 16)) || (format == 3 && bits == 32)) ||
         alignment != 2 * (bits / 8) || data_size % alignment != 0)
         throw std::runtime_error("Unsupported or invalid stereo I/Q WAV format");
-    WavSignal result{rate, {}};
+    WavSignal result{rate, {}, center_hz};
     result.samples.resize(static_cast<std::size_t>(data_size / alignment));
     input.seekg(static_cast<std::streamoff>(data_offset));
     std::vector<unsigned char> buffer(65536 - 65536 % alignment);

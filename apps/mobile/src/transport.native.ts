@@ -15,6 +15,7 @@ export function createTransport(handlers: TransportHandlers): Transport {
       if (stream === 1) current?.line(line); else current?.stderr(line + "\n");
     }),
     SarsatNative.addListener("onExit", ({ code }) => { const done = current; current = null; done?.close(code); }),
+    SarsatNative.addListener("onRecording", event => handlers.event({ type: "recording", ...event })),
   ];
   const core = new SessionCore((args, engine) => {
     current = engine;
@@ -24,6 +25,8 @@ export function createTransport(handlers: TransportHandlers): Transport {
   setTimeout(() => handlers.connection(true), 0);
   return {
     label: "Embedded native engine · Android",
+    startRecording: () => SarsatNative.startRecording(),
+    stopRecording: () => SarsatNative.stopRecording(),
     async info() {
       const settings = settingsSchema.parse(JSON.parse(await SarsatNative.settings()));
       return infoSchema.parse({ settings, devices: SarsatNative.devices(), samples: samples(), status: core.status,

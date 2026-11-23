@@ -83,6 +83,7 @@ export const nativeEventSchema = z.discriminatedUnion("type", [
   }).passthrough() }),
 ]);
 export const serverEventSchema = z.union([nativeEventSchema,
+  z.object({ type: z.literal("recording"), file: z.string().nullable(), saved: z.string().optional() }),
   z.object({ type: z.literal("status"), status: z.enum(["idle", "starting", "running", "stopping", "retrying"]) }),
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);

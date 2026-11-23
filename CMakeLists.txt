@@ -53,6 +53,7 @@ else()
 endif()
 
 add_executable(cospas-cli native/cospas-cli/main.cpp native/cospas-cli/beacon.cpp native/cospas-cli/telemetry.cpp
+  native/sources/iq_recording.cpp
   native/sources/wav.cpp)
 target_link_libraries(cospas-cli PRIVATE cospas-c-api cospas-rtl-control "${FFTW_LIBRARY}")
 target_include_directories(cospas-cli PRIVATE native/sources)
@@ -61,6 +62,10 @@ target_include_directories(cospas-cli SYSTEM PRIVATE "${LIBUSB_INCLUDE_DIR}")
 target_include_directories(cospas-cli SYSTEM PRIVATE "${FFTW_INCLUDE_DIR}")
 
 if(BUILD_TESTING)
+  add_executable(iq-recording-tests native/tests/iq_recording_tests.cpp native/sources/iq_recording.cpp native/sources/wav.cpp)
+  target_include_directories(iq-recording-tests PRIVATE native/sources native/cospas-core/include)
+  target_link_libraries(iq-recording-tests PRIVATE Threads::Threads)
+  add_test(NAME iq-wav-recording COMMAND iq-recording-tests "${CMAKE_CURRENT_BINARY_DIR}/test-iq-recording.wav")
   add_executable(telemetry-tests native/tests/telemetry_tests.cpp native/cospas-cli/telemetry.cpp "${DSP_TABLES}")
   target_include_directories(telemetry-tests PRIVATE native/cospas-core native/cospas-core/include)
   target_include_directories(telemetry-tests SYSTEM PRIVATE "${FFTW_INCLUDE_DIR}")

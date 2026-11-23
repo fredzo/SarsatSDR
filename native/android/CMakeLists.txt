@@ -32,6 +32,7 @@ add_library(sarsat-native SHARED
   "${ROOT}/native/sources/rtl_control.cpp" "${ROOT}/native/sources/rtl_usb.cpp"
   "${ROOT}/native/sources/r820_tuner.cpp" "${ROOT}/native/sources/rtl2832.cpp"
   "${ROOT}/native/sources/rtl_iq_capture.cpp" "${ROOT}/native/sources/wav.cpp"
+  "${ROOT}/native/sources/iq_recording.cpp"
   "${ROOT}/native/cospas-cli/main.cpp" "${ROOT}/native/cospas-cli/beacon.cpp"
   "${ROOT}/native/cospas-cli/telemetry.cpp"
   "${ROOT}/native/cospas-core/dsp_tables.hpp")

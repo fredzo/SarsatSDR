@@ -3,6 +3,7 @@ package expo.modules.sarsatnative
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.ContentValues
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
@@ -12,12 +13,19 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Build
+import android.os.Environment
+import android.os.ParcelFileDescriptor
+import android.net.Uri
+import android.provider.MediaStore
 import android.util.Base64
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.concurrent.thread
 
 class SarsatNativeModule : Module() {
@@ -27,6 +35,56 @@ class SarsatNativeModule : Module() {
   private var engine: Thread? = null
   private var connection: UsbDeviceConnection? = null
   private var fmTrack: AudioTrack? = null
+  @Volatile private var rtlActive = false
+  private data class Recording(val uri: Uri, val descriptor: ParcelFileDescriptor, val name: String)
+  private val recordingLock = Any()
+  private var recording: Recording? = null
+
+  private fun startRecording() = synchronized(recordingLock) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q)
+      throw CodedException("I/Q recording to shared storage requires Android 10 or later")
+    if (!rtlActive || engine == null) throw CodedException("I/Q recording requires a running RTL-SDR acquisition")
+    if (recording != null) throw CodedException("An I/Q recording is already active")
+    val name = "capture-${SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS", Locale.US).format(Date())}.wav"
+    val values = ContentValues().apply {
+      put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+      put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")
+      put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/SarsatSDR")
+      put(MediaStore.MediaColumns.IS_PENDING, 1)
+    }
+    val resolver = context.contentResolver
+    val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+      ?: throw CodedException("Could not create I/Q capture in Download/SarsatSDR")
+    var descriptor: ParcelFileDescriptor? = null
+    try {
+      val opened = resolver.openFileDescriptor(uri, "rw")
+        ?: throw CodedException("Could not open I/Q WAV output")
+      descriptor = opened
+      NativeEngine.startRecording(opened.fd)
+      recording = Recording(uri, opened, name)
+      sendEvent("onRecording", mapOf("file" to name))
+    } catch (error: Exception) {
+      try { descriptor?.close() } catch (cleanup: Exception) { error.addSuppressed(cleanup) }
+      try { resolver.delete(uri, null, null) } catch (cleanup: Exception) { error.addSuppressed(cleanup) }
+      throw error
+    }
+  }
+
+  private fun finishRecording() = synchronized(recordingLock) {
+    val current = recording ?: return@synchronized
+    recording = null
+    try {
+      current.descriptor.use { NativeEngine.stopRecording() }
+      val values = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+      if (context.contentResolver.update(current.uri, values, null, null) != 1)
+        throw CodedException("Could not publish the I/Q WAV capture")
+      sendEvent("onRecording", mapOf("file" to null, "saved" to "Download/SarsatSDR/${current.name}"))
+    } catch (error: Exception) {
+      try { context.contentResolver.delete(current.uri, null, null) } catch (cleanup: Exception) { error.addSuppressed(cleanup) }
+      sendEvent("onRecording", mapOf("file" to null))
+      throw error
+    }
+  }
 
   @Synchronized
   private fun resetFm() {
@@ -75,6 +133,7 @@ class SarsatNativeModule : Module() {
   private fun devices() = usb.deviceList.values.filter(::supported)
 
   private fun runCapture(arguments: List<String>, promise: Promise, rtl: Boolean) {
+    rtlActive = rtl
     engine = thread(name = "sarsat-engine") {
       val sink = object : NativeEngine.Sink {
         override fun onLine(stream: Int, bytes: ByteArray) {
@@ -87,6 +146,11 @@ class SarsatNativeModule : Module() {
       } catch (error: Throwable) {
         sendEvent("onLine", mapOf("stream" to 2, "line" to "cospas-cli: ${error.message}"))
       } finally {
+        rtlActive = false
+        try { finishRecording() } catch (error: Exception) {
+          code = 1
+          sendEvent("onLine", mapOf("stream" to 2, "line" to "I/Q recording: ${error.message}"))
+        }
         connection?.close()
         connection = null
         if (rtl) context.stopService(Intent(context, ReceptionService::class.java))
@@ -116,7 +180,7 @@ class SarsatNativeModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("SarsatNative")
-    Events("onLine", "onExit")
+    Events("onLine", "onExit", "onRecording")
 
     Function("samplesDirectory") { samplesDir.absolutePath }
 
@@ -188,6 +252,8 @@ class SarsatNativeModule : Module() {
     }
 
     Function("stop") { NativeEngine.stop() }
+    AsyncFunction("startRecording") { startRecording() }
+    AsyncFunction("stopRecording") { finishRecording() }
     Function("writeFm") { pcm: String, volume: Double -> writeFm(pcm, volume) }
     Function("setFmVolume") { volume: Double -> setFmVolume(volume) }
     Function("resetFm") { resetFm() }

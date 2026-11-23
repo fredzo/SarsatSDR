@@ -6,6 +6,7 @@
 #include "rtl_iq_capture.hpp"
 #include "telemetry.hpp"
 #include "fgb_fm.hpp"
+#include "iq_recording.hpp"
 
 #include <libusb.h>
 
@@ -410,6 +411,7 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
     std::uint8_t minimum = 255, maximum = 0;
     const auto started = std::chrono::steady_clock::now();
     cospas::RtlIqCapture capture(device);
+    if (decoding) cospas::iq_recorder().configure(cospas::rtl_sample_rate_hz, mixer_hz, frequency);
     if (events)
         std::cout << "{\"type\":\"session\",\"source\":\"rtl\",\"sampleRateHz\":" << cospas::rtl_sample_rate_hz
                   << ",\"centerHz\":" << frequency << ",\"durationSeconds\":null}\n" << std::flush;
@@ -439,6 +441,7 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
             filled += count;
             offset += count;
             if (filled == block.size()) {
+                if (decoding) cospas::iq_recorder().push(block);
                 const auto observation = frontend.process_cu8(block);
                 clipped_samples += observation.clipped_samples;
                 if (observation.gain_changed) ++gain_changes;
@@ -485,6 +488,7 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
     if (blocks == 0) throw std::runtime_error(label + " received no complete 6400-sample I/Q block");
     if (bytes & 1) throw std::runtime_error(label + " ended with an incomplete I/Q pair");
     if (worker) {
+        if (filled) cospas::iq_recorder().push(std::span(block).first(filled));
         if (filled) submit(std::span(block).first(filled));
         check(cs_worker_finish(worker.get(), &error), error);
         while (!finished)
@@ -656,6 +660,7 @@ int cospas_cli_run(int argc, char** argv) {
             throw std::invalid_argument("--fgb-fm requires a WAV sample rate of at least 48 kHz");
         cospas::cli::FgbFm fm(signal.sample_rate_hz);
         const auto original_samples = signal.samples.size();
+        const auto wav_center_hz = signal.center_hz.value_or(406050000);
         std::complex<double> dc_offset{};
         if (remove_dc) {
             if (signal.samples.empty()) throw std::invalid_argument("DC removal requires non-empty WAV input");
@@ -685,10 +690,11 @@ int cospas_cli_run(int argc, char** argv) {
         const bool fine_audio_blocks = events && fgb_fm && settings.fgb && !block_samples;
         if (events) {
             if (!block_samples) block_samples = signal.sample_rate_hz / (fine_audio_blocks ? 40 : 10);
-            spectrum = std::make_unique<cospas::cli::Spectrum>(signal.sample_rate_hz, 406050000,
-                [&](const auto& line, double time, float) { emit_spectrum(line, time - double(noise_preroll_ms) / 1000); });
+            spectrum = std::make_unique<cospas::cli::Spectrum>(signal.sample_rate_hz, wav_center_hz,
+                [&](const auto& line, double time, float) { emit_spectrum(line, time - double(noise_preroll_ms) / 1000, 0,
+                    std::numeric_limits<float>::quiet_NaN(), wav_center_hz); }, wav_center_hz);
             std::cout << "{\"type\":\"session\",\"source\":\"sample\",\"sampleRateHz\":" << signal.sample_rate_hz
-                      << ",\"centerHz\":406050000,\"durationSeconds\":" << double(original_samples) / signal.sample_rate_hz
+                      << ",\"centerHz\":" << wav_center_hz << ",\"durationSeconds\":" << double(original_samples) / signal.sample_rate_hz
                       << ",\"noisePrerollMs\":" << noise_preroll_ms
                       << ",\"dcRemovalApplied\":" << (remove_dc ? "true" : "false") << "}\n" << std::flush;
         }

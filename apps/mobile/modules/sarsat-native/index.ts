@@ -3,6 +3,7 @@ import { requireNativeModule, type EventSubscription } from "expo-modules-core";
 type NativeEvents = {
   onLine(event: { stream: number; line: string }): void;
   onExit(event: { code: number }): void;
+  onRecording(event: { file: string | null; saved?: string }): void;
 };
 type SarsatNative = {
   samplesDirectory(): string;
@@ -13,6 +14,8 @@ type SarsatNative = {
   prepareSample(name: string): Promise<string>;
   start(args: string[]): Promise<void>;
   stop(): void;
+  startRecording(): Promise<void>;
+  stopRecording(): Promise<void>;
   writeFm(pcm: string, volume: number): void;
   setFmVolume(volume: number): void;
   resetFm(): void;

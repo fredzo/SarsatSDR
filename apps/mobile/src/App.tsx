@@ -8,7 +8,7 @@ import Svg, { G, Path, Polyline, Text as SvgText } from "react-native-svg";
 import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileSearch, FileText, FlaskConical, FolderOpen, MapPin,
   Navigation, Play, BoomBox, Radio, RadioTower, RefreshCw, Settings as SettingsIcon, Square, Usb, type LucideIcon,
   ArrowBigRight,
-  ArrowBigLeft, Copy, ExternalLink, Minus, Pencil, Plus, Share2, X } from "lucide-react-native";
+  ArrowBigLeft, Circle, Copy, ExternalLink, Minus, Pencil, Plus, Share2, X } from "lucide-react-native";
 import { startSchema, playbackConfiguration, type Frame, type Info, type Settings, type SpectrumEvent,
   type Diagnostics, type AcquisitionChannel, type ServerEvent } from "@sarsat/shared/protocol";
 import { beaconLocator, beaconPosition, googleMapsUrl, wazeUrl } from "@sarsat/shared/beacon-position";
@@ -652,6 +652,9 @@ export default function App() {
   const [status, setStatus] = useState<Info["status"]>("idle");
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
+  const [recordingFile, setRecordingFile] = useState<string | null>(null);
+  const [lastRecording, setLastRecording] = useState("");
+  const [recordingPending, setRecordingPending] = useState(false);
   const { preferences: reception, current: receptionRef, ready: receptionReady, change: changeReception,
     replace: replaceReception } = useReceptionPreferences(setError);
   const { preferences: saved, current: savedRef, ready: savedReady, change: changeSaved,
@@ -736,6 +739,10 @@ export default function App() {
           if (message.status === "idle") { setChannels([]); setSgbDetections(0); setFgbDetections(0); }
         }
         else if (message.type === "error") { receiverActionPending.current = false; setError(message.message); }
+        else if (message.type === "recording") {
+          setRecordingFile(message.file);
+          if (message.saved) setLastRecording(message.saved);
+        }
         else if (message.type === "session") {
           fm.reset();
           setCountdownStart(null);
@@ -819,6 +826,16 @@ export default function App() {
     return true;
   }
   function stop() { transport?.send({ type: "stop" }); }
+  async function changeRecording(active: boolean) {
+    setError("");
+    setRecordingPending(true);
+    try {
+      const action = active ? transport?.startRecording : transport?.stopRecording;
+      if (!action) throw new Error("I/Q recording is available in the Android application only.");
+      await action();
+    } catch (reason) { setError(`I/Q recording: ${String(reason)}`); }
+    finally { setRecordingPending(false); }
+  }
   function tuneCenter(mhz: number) {
     setError("");
     if (mhz === center) return;
@@ -859,6 +876,7 @@ export default function App() {
   const decoderLocked = busy || !displayedSettings || (tab === "Player" && useSampleProfile);
   const duration = session?.durationSeconds ?? 1;
   const receiving = connected && status === "running";
+  const rtlAcquisition = busy && session?.source === "rtl";
   const activeIndex = activeFrame ? visibleEntries.findIndex(entry => entry.id === activeFrame.id) : -1;
   const frameCount = visibleEntries.length === entries.length ? String(entries.length) : `${visibleEntries.length}/${entries.length}`;
   const spectrum = (compact = false) => <Spectrum line={line} channels={channels} centerHz={session?.centerHz ?? center * 1e6}
@@ -906,7 +924,7 @@ export default function App() {
         <AcquisitionSpinner running={receiving} start={countdownStart} preferences={reception} play={playSound} />
         <Button iconOnly kind={busy ? "stop" : "primary"} icon={busy ? Square : Play}
           backgroundColor={busy ? "#4a1616" : undefined} title={busy ? "Stop reception" : "Start reception"}
-          disabled={!connected || !preferencesReady || status === "starting" || status === "stopping" || (!busy && (!settings || !info?.devices.length))}
+          disabled={!connected || !preferencesReady || recordingPending || status === "starting" || status === "stopping" || (!busy && (!settings || !info?.devices.length))}
           onPress={toggleReceiver} />
       </View></View>
     {!!error && <View accessibilityRole="alert" style={s.error}><Text style={s.errorText}><Text style={{ fontWeight: "bold" }}>ERROR </Text>{error}</Text>
@@ -944,10 +962,21 @@ export default function App() {
             <NumberField style={{ flexShrink: 1 }} label="Noise preroll · ms" disabled={busy || useSampleProfile}
               value={useSampleProfile ? playback?.noisePrerollMs ?? 0 : preroll} onChange={value => changeSaved("preroll", value)} />
             <View style={s.row}>
-              <View style={s.fill}><Button kind="primary" icon={Play} title="PLAY" disabled={busy || !connected || !info || !settings || !preferencesReady} onPress={() => start("sample")} /></View>
-              <View style={s.fill}><Button icon={Square} title="STOP" disabled={!busy} onPress={stop} /></View>
+              <View style={s.fill}>{rtlAcquisition
+                ? <Button kind="primary" backgroundColor="#b71c1c" icon={Circle} title="RECORD"
+                    disabled={status !== "running" || !!recordingFile || recordingPending || !transport?.startRecording}
+                    onPress={() => { void changeRecording(true); }} />
+                : <Button kind="primary" icon={Play} title="PLAY" disabled={busy || !connected || !info || !settings || !preferencesReady}
+                    onPress={() => start("sample")} />}</View>
+              <View style={s.fill}><Button icon={Square} title="STOP" disabled={!busy || recordingPending}
+                onPress={() => { if (recordingFile) void changeRecording(false); else stop(); }} /></View>
             </View>
-          {useSampleProfile ? playback ? <Text style={[s.p, { fontSize: 10, lineHeight: 14, marginTop: 4 }]}>
+          {rtlAcquisition ? <Text style={[s.p, recordingFile && { color: "#ff8484" }]}>
+            {recordingFile ? `RECORDING\n${recordingFile}\nSTOP saves the WAV without stopping reception.`
+              : lastRecording ? `Saved: ${lastRecording}` : "Stereo I/Q WAV · PCM 16-bit\nDownload/SarsatSDR"}
+            {!transport?.startRecording && "\nRecording requires the Android application."}
+            </Text>
+          : useSampleProfile ? playback ? <Text style={[s.p, { fontSize: 10, lineHeight: 14, marginTop: 4 }]}>
             Active profile: {playback.settings.fgb ? "FGB" : ""}{playback.settings.fgb && playback.settings.sgb ? " + " : ""}{playback.settings.sgb ? "SGB" : ""}
             {playback.settings.fgb && `\nOverPeak ${playback.settings.fgbOverPeakDb} dB · Avg ${playback.settings.fgbAverage}` +
               `\nRunTime ${playback.settings.fgbRuntimeMs} ms` +
