@@ -190,6 +190,8 @@ bool setting_option(std::string_view arg, int& n, int argc, char** argv, cs_conf
     else if (arg == "--sgb-only") s.fgb = 0;
     else if (arg == "--normal-prn-only") s.test_prn = 0;
     else if (arg == "--test-prn-only") s.normal_prn = 0;
+    else if (arg == "--fgb-normal-only") s.fgb_self_test = 0;
+    else if (arg == "--fgb-self-test-only") s.fgb_normal = 0;
     else if (arg == "--show-bch-failures") s.show_bch_failures = 1;
     else if (arg == "--show-fgb-bch-failures") s.show_fgb_bch_failures = 1;
     else if (arg == "--no-quality-check") s.quality_check = 0;
@@ -233,6 +235,8 @@ constexpr std::string_view usage =
     "Usage: cospas-cli rtl-probe --frequency-hz N --gain-index N [--seconds N] [--agc] [--json]\n"
     "Usage: cospas-cli receive --frequency-hz N --gain-index N [--seconds N] [--agc] [--fgb-only|--sgb-only] [--json]\n"
     "Usage: cospas-cli decode --input capture.wav [--fgb-only|--sgb-only] [--json]\n"
+    "  --fgb-normal-only      Decode normal FGB frames only (default: both modes)\n"
+    "  --fgb-self-test-only   Decode self-test FGB frames only\n"
     "  --sgb-threshold N       detection threshold (default 35)\n"
     "  --sgb-phase-gain N      PLL Alpha (default 0.83)\n"
     "  --sgb-frequency-gain N  PLL Beta (default 3.81)\n"
@@ -319,8 +323,6 @@ int probe_rtl(int argc, char** argv, bool decoding = false) {
     if (bus.has_value() != address.has_value() ||
         (bus && (*bus < 0 || *bus > 255 || *address < 0 || *address > 255)))
         throw std::invalid_argument(label + " requires both --bus and --address within 0..255");
-    if (!settings.fgb && !settings.sgb)
-        throw std::invalid_argument("Select only one generation filter: --fgb-only or --sgb-only");
     if (continuous && !events) throw std::invalid_argument("--continuous requires --events");
     if (continuous && !control_stdin) throw std::invalid_argument("--continuous requires --control-stdin");
     if (control_stdin && !events) throw std::invalid_argument("--control-stdin requires --events");
@@ -564,6 +566,8 @@ int cospas_cli_run(int argc, char** argv) {
             std::cout << "{\"fgb\":" << (s.fgb ? "true" : "false") << ",\"sgb\":" << (s.sgb ? "true" : "false")
                       << ",\"normalPrn\":" << (s.normal_prn ? "true" : "false")
                       << ",\"testPrn\":" << (s.test_prn ? "true" : "false")
+                      << ",\"fgbNormal\":" << (s.fgb_normal ? "true" : "false")
+                      << ",\"fgbSelfTest\":" << (s.fgb_self_test ? "true" : "false")
                       << ",\"qualityCheck\":" << (s.quality_check ? "true" : "false")
                       << ",\"showBchFailures\":" << (s.show_bch_failures ? "true" : "false")
                       << ",\"fgbAlpha\":" << s.fgb_alpha << ",\"fgbBeta\":" << s.fgb_beta
@@ -638,8 +642,6 @@ int cospas_cli_run(int argc, char** argv) {
             else throw std::invalid_argument("Unknown or incomplete CLI option: " + std::string(arg));
         }
         if (input.empty()) throw std::invalid_argument("--input is required");
-        if (!settings.fgb && !settings.sgb)
-            throw std::invalid_argument("--fgb-only and --sgb-only are mutually exclusive");
         if (noise_preroll_ms < 0 || noise_preroll_ms > 10000)
             throw std::invalid_argument("Noise preroll must be between 0 and 10000 ms");
         if (worker_queue && !block_samples)

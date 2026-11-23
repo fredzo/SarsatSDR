@@ -17,6 +17,10 @@ aussi en ligne de commande, sans interface.
   l'interface garde l'erreur affichee et relance l'acquisition RTL-SDR.
 - Decodage FGB/SGB, mots bruts et corriges, identification et position balise,
   frequence, horodatage, diagnostics d'acquisition et traces phase/I/Q.
+  Selection independante Normal / Self Test FGB dans le moteur natif
+  (`--fgb-normal-only` / `--fgb-self-test-only`), comme les PRN SGB.
+  Sans mode coche, la detection de la generation est desactivee ; les deux
+  generations peuvent etre desactivees en conservant le spectre et le waterfall.
 - BCH : capacite FGB BCH-1 de 3 bits, BCH-2 de 2 bits ; SGB de 6 bits.
   Limites de rejet configurables, corrections et ecarts d'en-tete affiches.
   Les trames courtes et d'orbitographie FGB ne produisent pas de statut BCH-2.
@@ -60,8 +64,9 @@ aussi en ligne de commande, sans interface.
   compteur croissant modulo 1000 au demarrage et apres expiration sans auto-relance.
   Appui long : remise a zero en mode croissant jusqu'a la prochaine FGB non filtree,
   avec un double bip, sans modifier le reglage d'auto-relance. Sons, countdown et beeps actives par defaut,
-  filtres et auto-relance desactives. Settings regroupe Filtering, Audio et RTL-SDR,
-  avec restauration confirmee des valeurs par defaut Audio et RTL-SDR.
+  filtres actives et auto-relance desactivee. Settings regroupe Filtering, Audio et RTL-SDR,
+  avec restauration confirmee des valeurs par defaut de chaque bloc et de Receiver.
+  Les champs Settings restent visibles au-dessus du clavier.
   Tous les reglages (decodeurs, USB, affichage, lecteur et reception) sont memorises
   sur l'appareil et restaures au lancement suivant, sauf le choix du peripherique USB :
   la cle connectee est selectionnee au lancement.
@@ -426,7 +431,8 @@ augmenter Range diminue le contraste. Reglages et calibration recolorent aussi l
 Les points FFT indiquent des essais FGB avant BCH, pas des trames validees.
 
 Receiver partage la hauteur disponible entre spectre/waterfall a gauche (75 %)
-et controles empiles a droite (25 %). Les readouts et metriques restent accessibles
+et controles compacts sans defilement interne a droite (25 %), avec restauration
+des reglages a droite de WF Duration. Les readouts et metriques restent accessibles
 en defilant vers le bas. Saisir le centre en MHz puis valider avec le bouton
 de reglage ; en reception, l'acquisition redemarre proprement a la nouvelle frequence.
 Les trames conservees gardent leur frequence de reception d'origine.

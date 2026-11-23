@@ -71,6 +71,8 @@ typedef struct cs_config {
     int32_t fgb_header_errors; /* ABI v1 tail extension, 0..3; older configurations use 2. */
     int32_t fgb_bch2_max_errors; /* ABI v1 tail extension, 0..2; older configurations use 2. */
     uint32_t show_fgb_bch_failures; /* ABI v1 tail extension; older configurations use 0. */
+    uint32_t fgb_normal; /* ABI v1 tail extension; older configurations enable both FGB modes. */
+    uint32_t fgb_self_test;
 } cs_config;
 
 typedef struct cs_bch_status {

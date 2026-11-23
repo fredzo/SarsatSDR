@@ -30,7 +30,7 @@ test("Saved app preferences round-trip all receiver, decoder, display and player
 });
 
 test("Frame notification checks every BCH and prioritizes active display filters", () => {
-  const preferences = receptionPreferencesSchema.parse({});
+  const preferences = receptionPreferencesSchema.parse({ filterInvalid: false, filterOrbitographic: false });
   assert.equal(frameNotification(frame(1, "EPIRB"), preferences), "ok");
   assert.equal(frameNotification(frame(1, "EPIRB", false), preferences), "ko");
   assert.equal(frameNotification(frame(2, "ELT", false), preferences), "ko");
@@ -42,7 +42,7 @@ test("Frame notification checks every BCH and prioritizes active display filters
 test("Display filters are reversible, combine with OR and keep source frames unchanged", () => {
   const stored = [frame(1, "EPIRB"), frame(1, "EPIRB", false), frame(1, "ORB"), frame(2, "SYSTM"), frame(2, "PLB")];
   const original = JSON.stringify(stored);
-  const preferences = receptionPreferencesSchema.parse({});
+  const preferences = receptionPreferencesSchema.parse({ filterInvalid: false, filterOrbitographic: false });
   const visible = (filterInvalid: boolean, filterOrbitographic: boolean) => stored.filter(item =>
     !isFrameFiltered(item, { ...preferences, filterInvalid, filterOrbitographic }));
   assert.equal(visible(true, false).length, 4);
@@ -53,7 +53,7 @@ test("Display filters are reversible, combine with OR and keep source frames unc
 });
 
 test("Over-limit FGB corrections use the KO notification and display filter", () => {
-  const preferences = receptionPreferencesSchema.parse({});
+  const preferences = receptionPreferencesSchema.parse({ filterInvalid: false, filterOrbitographic: false });
   const overLimit = { ...frame(1, "EPIRB"), correctionLimit: 2,
     bch: [{ valid: true, correctedErrors: 3 }] };
   assert.equal(frameNotification(overLimit, preferences), "ko");

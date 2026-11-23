@@ -27,6 +27,15 @@ int main(void) {
     CHECK(cs_config_init(&config, sizeof(config) - 1, &error) == CS_INVALID_ARGUMENT);
     CHECK(error.code == CS_INVALID_ARGUMENT && error.message[0]);
     CHECK(cs_config_init(&config, sizeof(config), &error) == CS_OK);
+    config.fgb_normal = 2;
+    config.fgb_self_test = 2;
+    CHECK(cs_decode_iq(&config, CS_IQ_CF32, 230400, NULL, 0, &result, &error) == CS_INVALID_ARGUMENT);
+    config.struct_size = (uint32_t)offsetof(cs_config, fgb_normal);
+    config.show_fgb_bch_failures = 1;
+    CHECK(cs_decode_iq(&config, CS_IQ_CF32, 230400, NULL, 0, &result, &error) == CS_OK);
+    cs_result_destroy(result);
+    result = NULL;
+    CHECK(cs_config_init(&config, sizeof(config), &error) == CS_OK);
     CHECK(error.code == CS_OK && !error.message[0]);
     {
         const size_t legacy_size = offsetof(cs_config, sgb_feedback);

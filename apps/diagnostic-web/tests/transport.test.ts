@@ -19,6 +19,68 @@ async function defaults() {
   return settingsSchema.parse(JSON.parse(result.stdout));
 }
 
+test("FGB mode controls reach the native decoder and independently select normal and self-test frames", async () => {
+  const sample = "cnes-long-1.wav";
+  const profiles = playbackProfilesSchema.parse(JSON.parse(await readFile(resolve(root, "samples", "playback-profiles.json"), "utf8")));
+  const playback = playbackConfiguration(await defaults(), profiles[sample]);
+  const command = startSchema.parse({ type: "start", source: "sample", sample, centerHz: 406050000,
+    gainIndex: 8, agc: true, ...playback, settings: { ...playback.settings, sgb: false } });
+  let baseline: Frame[] = [];
+  for (const mode of ["both", "normal", "self_test", "none"] as const) {
+    const settings = { ...command.settings, fgbNormal: mode === "both" || mode === "normal",
+      fgbSelfTest: mode === "both" || mode === "self_test" };
+    const args = argumentsFor({ ...command, settings }, [sample], root)
+      .filter(arg => !["--events", "--control-stdin", "--realtime"].includes(arg));
+    if (mode === "normal") assert.ok(args.includes("--fgb-normal-only"));
+    if (mode === "self_test") assert.ok(args.includes("--fgb-self-test-only"));
+    const result = await execute(executable, [...args, "--json", "--block-samples", "4093", "--worker-queue", "2"],
+      { maxBuffer: 8 * 1024 * 1024, timeout: 60000 }).catch(error => {
+      if (mode === "none" && error.code === 2) return { stdout: String(error.stdout) };
+      throw error;
+    });
+    const decoded = JSON.parse(result.stdout);
+    const frames: Frame[] = decoded.frames;
+    if (mode === "both") {
+      baseline = frames;
+      assert.ok(frames.some(frame => frame.mode === "normal") && frames.some(frame => frame.mode === "self_test"));
+    } else if (mode === "none") {
+      assert.deepEqual(frames, []);
+      assert.equal(decoded.diagnostics.fgbCandidates, 0);
+      assert.equal(decoded.diagnostics.fgbMaxPeakDb, 0);
+    } else assert.deepEqual(frames, baseline.filter(frame => frame.mode === mode));
+  }
+  assert.equal(startSchema.safeParse({ ...command, settings: { ...command.settings, fgbNormal: false, fgbSelfTest: false } }).success, true);
+  assert.equal(startSchema.safeParse({ ...command, settings: { ...command.settings, fgb: false, sgb: true,
+    fgbNormal: false, fgbSelfTest: false } }).success, true);
+});
+
+test("Empty decoder selections disable native acquisition in batch and streaming workers", async () => {
+  const settings = await defaults();
+  const disabled = [
+    { fgb: true, sgb: false, fgbNormal: false, fgbSelfTest: false },
+    { fgb: false, sgb: true, normalPrn: false, testPrn: false },
+    { fgb: true, sgb: true, fgbNormal: false, fgbSelfTest: false, normalPrn: false, testPrn: false },
+    { fgb: false, sgb: false },
+  ];
+  for (const selection of disabled) for (const streaming of [false, true]) {
+    const command = startSchema.parse({ type: "start", source: "sample", sample: "sgb.wav", centerHz: 406050000,
+      gainIndex: 8, agc: true, removeDc: false, noisePrerollMs: 0, settings: { ...settings, ...selection } });
+    const args = argumentsFor(command, ["sgb.wav"], root)
+      .filter(arg => !["--events", "--control-stdin", "--realtime"].includes(arg));
+    if (streaming) args.push("--block-samples", "4093", "--worker-queue", "2");
+    const result = await execute(executable, [...args, "--json"], { maxBuffer: 8 * 1024 * 1024, timeout: 15000 }).catch(error => {
+      if (error.code === 2) return { stdout: String(error.stdout) };
+      throw error;
+    });
+    const decoded = JSON.parse(result.stdout);
+    assert.deepEqual(decoded.frames, []);
+    assert.equal(decoded.diagnostics.fgbCandidates, 0);
+    assert.equal(decoded.diagnostics.fgbMaxPeakDb, 0);
+    assert.equal(decoded.diagnostics.sgbCandidates, 0);
+    assert.equal(decoded.diagnostics.sgbMaxDetectionLevel, 0);
+  }
+});
+
 test("FGB WAV playback emits non-silent FM PCM only when requested", async () => {
   for (const [sample, options, expected] of [
     ["fgb.wav", ["--fgb-only", "--fgb-fm"], true],
@@ -99,7 +161,7 @@ test("UI command validation preserves native defaults and constrains sample acce
   assert.equal(args.includes("--remove-dc"), false);
   assert.equal(args[args.indexOf("--sgb-threshold") + 1], String(settings.sgbThreshold));
   assert.throws(() => argumentsFor({ ...command, sample: "..\\outside\\unexpected.exe" }, ["sgb.wav"], root));
-  assert.equal(startSchema.safeParse({ ...command, settings: { ...settings, fgb: false, sgb: false } }).success, false);
+  assert.equal(startSchema.safeParse({ ...command, settings: { ...settings, fgb: false, sgb: false } }).success, true);
   for (const centerHz of [100000000, 145825123, 407000000, 999000000]) {
     const tuned = startSchema.parse({ ...command, source: "rtl", centerHz });
     const args = argumentsFor(tuned, [], root);

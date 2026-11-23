@@ -11,6 +11,8 @@ export function argumentsFor(command: StartCommand, samples: string[], samplePat
   if (s.fgb && command.fgbFm) args.push("--fgb-fm");
   if (!s.fgb) args.push("--sgb-only");
   if (!s.sgb) args.push("--fgb-only");
+  if (!s.fgbNormal) args.push("--fgb-self-test-only");
+  if (!s.fgbSelfTest) args.push("--fgb-normal-only");
   if (!s.normalPrn) args.push("--test-prn-only");
   if (!s.testPrn) args.push("--normal-prn-only");
   if (!s.qualityCheck) args.push("--no-quality-check");

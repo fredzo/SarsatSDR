@@ -277,6 +277,7 @@ private:
             diagnostics_.fgb_trials[diagnostics_.fgb_trial_count++] =
                 {double(start_) / 230400, frequency_, count, int(best)};
         if (errors > settings_.fgb_header_errors) return {};
+        if (self_test ? !settings_.fgb_self_test : !settings_.fgb_normal) return {};
         const auto one = BchDecoder(7, 0x89, 3).decode(std::span(bits).subspan(24, 82));
         if ((!one.valid || one.corrected_errors > settings_.fgb_max_errors) &&
             !settings_.show_bch_failures && !settings_.show_fgb_bch_failures)
@@ -593,8 +594,7 @@ void validate_settings(std::uint32_t rate, const DecoderSettings& settings) {
         settings.fgb_average > 1 || settings.sgb_filter > 1 ||
         settings.sgb_detection_threshold > 512 || settings.fgb_runtime_ms <= 0 || settings.fgb_max_errors < 0 ||
         settings.fgb_max_errors > 3 || settings.fgb_bch2_max_errors < 0 || settings.fgb_bch2_max_errors > 2 || settings.sgb_max_errors < 0 || settings.sgb_max_errors > 6 ||
-        settings.fgb_header_errors < 0 || settings.fgb_header_errors > 3 ||
-        !(settings.fgb || settings.sgb))
+        settings.fgb_header_errors < 0 || settings.fgb_header_errors > 3)
         throw std::invalid_argument("Invalid decoder settings");
 }
 
@@ -652,14 +652,14 @@ struct StreamDecoder::Impl {
         if (!first.process(std::span(&value, 1), std::span(&intermediate, 1))) return;
         intermediate = mixer.process(intermediate);
         if (!second.process(std::span(&intermediate, 1), std::span(&baseband, 1))) return;
-        if (settings.fgb) {
+        if (settings.fgb && (settings.fgb_normal || settings.fgb_self_test)) {
             fgb_block[fgb_available++] = baseband;
             if (fgb_available == fgb_block.size()) {
                 fgb.process(fgb_block, output);
                 fgb_available = 0;
             }
         }
-        if (settings.sgb && common_phase == 0) {
+        if (settings.sgb && (settings.normal_prn || settings.test_prn) && common_phase == 0) {
             const auto position = sgb_received % sgb_capacity;
             sgb_ring[position] = sgb_ring[position + sgb_capacity] = baseband;
             ++sgb_received;
@@ -878,8 +878,8 @@ std::vector<Frame> decode(std::span<const Sample> iq, std::uint32_t rate,
     DecodeDiagnostics local;
     auto& counters = diagnostics ? *diagnostics : local;
     std::vector<Frame> frames;
-    if (settings.fgb) frames = decode_fgb(input, settings, counters);
-    if (settings.sgb) {
+    if (settings.fgb && (settings.fgb_normal || settings.fgb_self_test)) frames = decode_fgb(input, settings, counters);
+    if (settings.sgb && (settings.normal_prn || settings.test_prn)) {
         auto sgb = decode_sgb(input, settings, counters);
         frames.insert(frames.end(), std::make_move_iterator(sgb.begin()), std::make_move_iterator(sgb.end()));
     }

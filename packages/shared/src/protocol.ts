@@ -3,6 +3,7 @@ import { z } from "zod";
 const finite = z.number().finite();
 const settingsFields = z.object({
   fgb: z.boolean(), sgb: z.boolean(), normalPrn: z.boolean(), testPrn: z.boolean(),
+  fgbNormal: z.boolean().default(true), fgbSelfTest: z.boolean().default(true),
   qualityCheck: z.boolean(), showBchFailures: z.boolean(),
   fgbAlpha: finite.nonnegative(), fgbBeta: finite.nonnegative(),
   fgbZeta: finite.nonnegative(), fgbAverage: finite.min(0).max(1),
@@ -18,8 +19,7 @@ const settingsFields = z.object({
   searchDepth: z.number().int().min(3).max(9),
   prnAlignment: z.number().int().min(0).max(2),
 });
-export const settingsSchema = settingsFields.refine(s => s.fgb || s.sgb, "Enable at least one decoder")
-  .refine(s => !s.sgb || s.normalPrn || s.testPrn, "Enable at least one PRN");
+export const settingsSchema = settingsFields;
 export type Settings = z.infer<typeof settingsSchema>;
 
 const playbackProfileSchema = z.object({

@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
-import { Animated, FlatList, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
+import { Animated, FlatList, Keyboard, KeyboardAvoidingView, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
   type TextStyle, type ViewStyle } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import Slider from "@react-native-community/slider";
@@ -88,31 +88,31 @@ const numericSettings: { key: keyof Pick<Settings, "fgbAlpha" | "fgbBeta" | "fgb
   { key: "sgbMaxErrors", label: "SGB BCH max errors", max: 6 },
 ];
 
-function Button({ title, onPress, disabled, kind, icon: Icon, backgroundColor, iconOnly }: { title: string; onPress: () => void; disabled?: boolean;
+function Button({ title, onPress, disabled, kind, icon: Icon, backgroundColor, iconOnly, style }: { title: string; onPress: () => void; disabled?: boolean;
   iconOnly?: boolean;
-  kind?: "primary" | "stop"; icon?: LucideIcon; backgroundColor?: string }) {
+  kind?: "primary" | "stop"; icon?: LucideIcon; backgroundColor?: string; style?: StyleProp<ViewStyle> }) {
   const color = kind === "stop" ? "#ff8484" : "#ffffff";
   return <Pressable accessibilityRole="button" accessibilityLabel={title}
     accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
     style={({ pressed }) => [s.button, kind === "primary" && s.primary,
-      iconOnly && s.iconButton, backgroundColor ? { backgroundColor, borderColor: backgroundColor } : undefined,
+      iconOnly && s.iconButton, style, backgroundColor ? { backgroundColor, borderColor: backgroundColor } : undefined,
       pressed && { opacity: .7 }, disabled && { opacity: .45 }]}>
     {Icon && <Icon size={iconOnly ? 26 : 20} color={color} />}
     {!iconOnly && <Text style={[s.buttonText, { color }, kind === "primary" && { fontWeight: "600" }]}>{title}</Text>}
   </Pressable>;
 }
-function Check({ label, value, onChange, disabled }: { label: string; value: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
+function Check({ label, value, onChange, disabled, compact }: { label: string; value: boolean; onChange: (value: boolean) => void; disabled?: boolean; compact?: boolean }) {
   return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: value, disabled }} disabled={disabled}
-    onPress={() => onChange(!value)} style={[s.check, disabled && { opacity: .5 }]}>
+    onPress={() => onChange(!value)} style={[s.check, compact && { minHeight: 20 }, disabled && { opacity: .5 }]}>
     <View style={[s.box, value && s.boxOn]}>{value && <Text style={s.tick}>✓</Text>}</View><Text style={s.small}>{label}</Text>
   </Pressable>;
 }
-function NumberField({ label, value, onChange, disabled, style, big }: { label: string; value: number | string | undefined;
-  onChange: (value: number) => void; disabled?: boolean; style?: StyleProp<ViewStyle>; big?: boolean }) {
+function NumberField({ label, value, onChange, disabled, style, big, onFocus }: { label: string; value: number | string | undefined;
+  onChange: (value: number) => void; disabled?: boolean; style?: StyleProp<ViewStyle>; big?: boolean; onFocus?: () => void }) {
   const [text, setText] = useState(value === undefined ? "" : String(value));
   useEffect(() => { if (Number(text) !== Number(value)) setText(value === undefined ? "" : String(value)); }, [value]);
   return <View style={[s.field, style]}><Text style={s.label}>{label}</Text>
-    <TextInput accessibilityLabel={label} editable={!disabled} keyboardType="numeric" value={text}
+    <TextInput accessibilityLabel={label} editable={!disabled} keyboardType="numeric" value={text} onFocus={onFocus}
       style={[s.input, big && s.bigInput, disabled && { opacity: .5 }]}
       onChangeText={next => { setText(next); const n = Number(next.replace(",", ".")); if (next !== "" && Number.isFinite(n)) onChange(n); }} /></View>;
 }
@@ -147,7 +147,8 @@ function CenterFrequency({ value, disabled, onChange }: {
     setText(mhz.toFixed(3));
     if (mhz !== value) onChange(Math.round(mhz * 1e6) / 1e6);
   }
-  return <View style={s.field}><Text style={s.label}>Center · MHz</Text>
+  return <View style={s.field}>
+    <Text style={s.label}>Center · MHz</Text>
     <View style={s.row}><TextInput ref={input} accessibilityLabel="Center · MHz" keyboardType="decimal-pad" editable={!disabled}
       style={[s.input, s.mono, { flex: 1, minWidth: 0, fontSize: 20 }]} value={text}
       onFocus={() => setValidation("")} onChangeText={setText} onBlur={apply} onSubmitEditing={() => input.current?.blur()} />
@@ -658,7 +659,28 @@ export default function App() {
   const { settings, center, gain, agc, sample, useSampleProfile, removeDc, preroll, base, range,
     waterfallAutomatic, calibrationDb, average, waterfallSpeed } = saved;
   const preferencesReady = receptionReady && savedReady;
-  const [confirmDefaults, setConfirmDefaults] = useState<"Audio" | "RTL-SDR" | null>(null);
+  const [confirmDefaults, setConfirmDefaults] = useState<"Audio" | "RTL-SDR" | "Receiver" | "Filtering" | null>(null);
+  const settingsScroll = useRef<ComponentRef<typeof ScrollView>>(null);
+  const settingsScrollOffset = useRef(0);
+  const revealSettingsInput = useCallback(() => {
+    if (Platform.OS === "web") return;
+    const input = TextInput.State.currentlyFocusedInput();
+    const scroll = settingsScroll.current;
+    if (!input || !scroll) return;
+    input.measureInWindow((_x, y, _width, height) => {
+      scroll.measureInWindow((_left, top, _viewportWidth, viewportHeight) => {
+        const bottom = Math.min(top + viewportHeight, Keyboard.metrics()?.screenY ?? Infinity);
+        const delta = y < top + 24 ? y - top - 24 : Math.max(0, y + height + 24 - bottom);
+        if (delta) scroll.scrollTo({ y: Math.max(0, settingsScrollOffset.current + delta), animated: true });
+      });
+    });
+  }, []);
+  useEffect(() => { settingsScrollOffset.current = 0; }, [tab]);
+  useEffect(() => {
+    if (tab !== "Settings") return;
+    const listener = Keyboard.addListener("keyboardDidShow", revealSettingsInput);
+    return () => listener.remove();
+  }, [tab, revealSettingsInput]);
   const playSound = useReceptionAudio(setError);
   const fmAudio = useRef<ReturnType<typeof createFmAudio> | null>(null);
   const playSoundRef = useRef(playSound);
@@ -852,10 +874,19 @@ export default function App() {
   return <View style={s.main}>
     {confirmDefaults && <ActionPopup title={`Restore ${confirmDefaults} default settings?`} close={() => setConfirmDefaults(null)} actions={[
       { label: "Cancel", icon: X, run: () => {} },
-      { label: "Restore default settings", icon: RefreshCw, run: () => {
+      { label: "Restore default settings", icon: RefreshCw, kind: "stop", run: () => {
         if (confirmDefaults === "Audio") {
           const { filterInvalid: _invalid, filterOrbitographic: _system, ...audio } = receptionPreferencesSchema.parse({});
           replaceReception(audio);
+        } else if (confirmDefaults === "Filtering") {
+          const { filterInvalid, filterOrbitographic } = receptionPreferencesSchema.parse({});
+          replaceReception({ filterInvalid, filterOrbitographic });
+        } else if (confirmDefaults === "Receiver" && info && settings) {
+          const { center: defaultCenter, base, range, average, waterfallAutomatic, waterfallSpeed } = appPreferencesSchema.parse({});
+          const { fgb, sgb, fgbNormal, fgbSelfTest, normalPrn, testPrn } = info.settings;
+          replaceSaved({ base, range, average, waterfallAutomatic, waterfallSpeed,
+            settings: { ...settings, fgb, sgb, fgbNormal, fgbSelfTest, normalPrn, testPrn } });
+          tuneCenter(defaultCenter);
         } else if (info) {
           replaceSaved({ settings: info.settings, gain: 8, agc: true, calibrationDb: 0 });
         }
@@ -933,28 +964,47 @@ export default function App() {
       </View>
     </View>}
     {(tab === "Receiver" || tab === "Signal" || tab === "Settings") &&
-    <ScrollView key={tab} style={s.fill} contentContainerStyle={{ paddingBottom: 12 }}
-      onLayout={tab === "Receiver" ? event => setReceiverHeight(event.nativeEvent.layout.height) : undefined}>
+    <KeyboardAvoidingView style={s.fill} enabled={tab === "Settings"} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+    <ScrollView ref={settingsScroll} key={tab} style={s.fill} contentContainerStyle={{ paddingBottom: 12 }} keyboardShouldPersistTaps="handled"
+      scrollEventThrottle={16} onScroll={event => { settingsScrollOffset.current = event.nativeEvent.contentOffset.y; }}
+      onLayout={event => {
+        if (tab === "Receiver") setReceiverHeight(event.nativeEvent.layout.height);
+        if (tab === "Settings") revealSettingsInput();
+      }}>
       {tab === "Receiver" && <>
         <View style={[s.split, { flex: undefined, height: receiverHeight || 500 }]}>
           <View style={{ flex: 3, minWidth: 0 }}>{spectrum(true)}</View>
-          <ScrollView style={s.sideControls} contentContainerStyle={{ gap: 6 }} nestedScrollEnabled>
+          <View style={[s.sideControls, s.receiverControls]}>
           <CenterFrequency value={center} onChange={tuneCenter}
             disabled={!settings || (busy && (session?.source !== "rtl" || status !== "running"))} />
-          <View style={[s.fieldset, decoderLocked && { opacity: .6 }]}><Text style={s.legend}>DECODERS</Text><View style={s.row}>
-            <Check label="FGB" value={displayedSettings?.fgb ?? false} disabled={decoderLocked} onChange={value => change("fgb", value)} />
-            <Check label="SGB" value={displayedSettings?.sgb ?? false} disabled={decoderLocked} onChange={value => change("sgb", value)} />
-            <Check label="Normal PRN" value={displayedSettings?.normalPrn ?? false} disabled={decoderLocked} onChange={value => change("normalPrn", value)} />
-            <Check label="Self Test PRN" value={displayedSettings?.testPrn ?? false} disabled={decoderLocked} onChange={value => change("testPrn", value)} />
-          </View></View>
+          <View style={[s.fieldset, { flexGrow: 1 }, decoderLocked && { opacity: .6 }]}><Text style={s.legend}>DECODERS</Text>
+            <View style={s.decoderRow}>
+              <Check compact label="FGB" value={displayedSettings?.fgb ?? false} disabled={decoderLocked} onChange={value => change("fgb", value)} />
+              <View style={s.decoderModes}>
+                <Check compact label="Normal" value={displayedSettings?.fgbNormal ?? true} disabled={decoderLocked || !displayedSettings?.fgb} onChange={value => change("fgbNormal", value)} />
+                <Check compact label="Self Test" value={displayedSettings?.fgbSelfTest ?? true} disabled={decoderLocked || !displayedSettings?.fgb} onChange={value => change("fgbSelfTest", value)} />
+              </View>
+            </View>
+            <View style={s.decoderRow}>
+              <Check compact label="SGB" value={displayedSettings?.sgb ?? false} disabled={decoderLocked} onChange={value => change("sgb", value)} />
+              <View style={s.decoderModes}>
+                <Check compact label="Normal PRN" value={displayedSettings?.normalPrn ?? false} disabled={decoderLocked || !displayedSettings?.sgb} onChange={value => change("normalPrn", value)} />
+                <Check compact label="Self Test PRN" value={displayedSettings?.testPrn ?? false} disabled={decoderLocked || !displayedSettings?.sgb} onChange={value => change("testPrn", value)} />
+              </View>
+            </View>
+          </View>
           <Range stacked label="FFT Average" value={average} min={.01} max={.99} step={.01} onChange={value => changeSaved("average", value)} digits={2} />
           <Check label="WF Auto" value={waterfallAutomatic} onChange={value => changeSaved("waterfallAutomatic", value)} />
           <Range stacked label="WF Base" value={base} min={0} max={100} step={1} onChange={value => changeSaved("base", value)} disabled={waterfallAutomatic} />
           <Range stacked label="WF Range" value={range} min={0} max={100} step={1} onChange={value => changeSaved("range", value)} disabled={waterfallAutomatic} />
           <Range stacked label="WF Speed" value={waterfallSpeed} min={.25} max={4} step={.25}
             onChange={value => changeSaved("waterfallSpeed", value)} digits={2} />
-          <Text style={s.small}>WF Duration: {(7 / waterfallSpeed).toFixed(1)} s</Text>
-          </ScrollView>
+          <View style={s.receiverFooter}>
+            <Text style={[s.small, { flexShrink: 1 }]}>WF Duration: {(7 / waterfallSpeed).toFixed(1)} s</Text>
+            <Button title={"Default\nSettings"} icon={RefreshCw} style={s.receiverDefaults}
+              disabled={busy || !info || !settings || !preferencesReady} onPress={() => setConfirmDefaults("Receiver")} />
+          </View>
+          </View>
         </View>
       <View style={s.readouts}>
         <Readout label="RECEIVER STATUS">{status.toUpperCase()}</Readout>
@@ -979,7 +1029,10 @@ export default function App() {
       {tab === "Signal" && <Signal entry={activeFrame} />}
 
       {tab === "Settings" && <View style={s.settingsPage}>
-        <View style={s.fieldset}><Text style={s.h2}>Filtering</Text>
+        <View style={s.fieldset}>
+          <View style={[s.row, { justifyContent: "space-between" }]}><Text style={s.h2}>Filtering</Text>
+            <Button title="Default Settings" icon={RefreshCw} disabled={!preferencesReady} onPress={() => setConfirmDefaults("Filtering")} />
+          </View>
           <View style={s.settingsGrid}>
             <Check label="Filter invalid frames" value={reception.filterInvalid} disabled={!preferencesReady}
               onChange={value => changeReception("filterInvalid", value)} />
@@ -1012,6 +1065,7 @@ export default function App() {
             <Check label="FGB countdown" value={reception.countdown} disabled={!preferencesReady}
               onChange={value => changeReception("countdown", value)} />
             <NumberField label="Countdown duration · seconds" value={reception.countdownSeconds} disabled={!preferencesReady}
+              onFocus={revealSettingsInput}
               onChange={value => changeReception("countdownSeconds", value)} />
             <Check label="Countdown beep" value={reception.countdownBeep} disabled={!preferencesReady}
               onChange={value => changeReception("countdownBeep", value)} />
@@ -1036,20 +1090,22 @@ export default function App() {
                 ...(info?.devices ?? []).map(value => ({ value: `${value.bus}:${value.address}`,
                   label: `${value.vendorId.toString(16).padStart(4, "0")}:${value.productId.toString(16).padStart(4, "0")} · bus ${value.bus}, address ${value.address}` }))]} />
             <Button icon={Usb} title="REFRESH USB" disabled={busy} onPress={() => { void refresh().catch(reason => setError(String(reason))); }} />
-            <NumberField style={s.setting} label="Initial gain preset · 0–11" value={gain} disabled={busy || !savedReady} onChange={value => changeSaved("gain", value)} />
+            <NumberField style={s.setting} label="Initial gain preset · 0–11" value={gain} disabled={busy || !savedReady} onFocus={revealSettingsInput} onChange={value => changeSaved("gain", value)} />
             <View style={s.setting}><Check label="Front-End AGC" value={agc} disabled={busy || !savedReady} onChange={value => changeSaved("agc", value)} /></View>
-            <NumberField style={s.setting} label="RTL calibration · dB" value={calibrationDb} disabled={!savedReady} onChange={value => changeSaved("calibrationDb", value)} />
+            <NumberField style={s.setting} label="RTL calibration · dB" value={calibrationDb} disabled={!savedReady} onFocus={revealSettingsInput} onChange={value => changeSaved("calibrationDb", value)} />
           </View>
           </View>
           <View style={s.fieldset}><Text style={s.legend}>FGB</Text>
             <View style={s.settingsGrid}>
               {numericSettings.filter(field => field.key.startsWith("fgb")).map(field => <NumberField key={field.key} style={s.setting} label={field.label} disabled={busy || !settings}
+                onFocus={revealSettingsInput}
                 value={settings?.[field.key]} onChange={value => change(field.key, Math.min(field.max ?? Infinity, Math.max(field.min ?? 0, value)))} />)}
             </View>
           </View>
           <View style={s.fieldset}><Text style={s.legend}>SGB</Text>
           <View style={s.settingsGrid}>
             {numericSettings.filter(field => !field.key.startsWith("fgb")).map(field => <NumberField key={field.key} style={s.setting} label={field.label} disabled={busy || !settings}
+              onFocus={revealSettingsInput}
               value={settings?.[field.key]} onChange={value => change(field.key, Math.min(field.max ?? Infinity, Math.max(field.min ?? 0, value)))} />)}
             <Select label="PRN alignment" value={String(settings?.prnAlignment ?? 2)} disabled={busy || !settings}
               onChange={value => change("prnAlignment", Number(value))}
@@ -1061,7 +1117,7 @@ export default function App() {
           </View>
         </View>
       </View>}
-    </ScrollView>}
+    </ScrollView></KeyboardAvoidingView>}
     <View style={s.nav}>
       {tabs.map(name => {
         const Icon = tabIcons[name];
@@ -1111,6 +1167,9 @@ const s = StyleSheet.create({
   fixedPage: { flex: 1, minHeight: 0, padding: 8 },
   sideControls: { flex: 1, minWidth: 0, minHeight: 0, padding: 10, gap: 6, backgroundColor: "#001a1a",
     borderWidth: 1, borderColor: "#003333", borderRadius: 8 },
+  receiverControls: { padding: 8, gap: 2 },
+  receiverFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 4 },
+  receiverDefaults: { paddingHorizontal: 8, paddingVertical: 4, gap: 6 },
   detailPane: { flex: 1, minHeight: 0, padding: 10, backgroundColor: "#001a1a", overflow: "hidden" },
   fullDetail: { padding: 10, backgroundColor: "#001a1a" },
   frameHeader: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
@@ -1211,6 +1270,8 @@ const s = StyleSheet.create({
   settingsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 20, paddingVertical: 16 },
   settingsPage: { padding: 18, gap: 24 },
   settingsBlock: { gap: 16, paddingVertical: 12 },
+  decoderRow: { flexDirection: "row", alignItems: "center", gap: 12, flexGrow: 1 },
+  decoderModes: { flex: 1, alignSelf: "stretch", justifyContent: "space-around" },
   setting: { flexBasis: 260, flexGrow: 1 },
   statusbar: { borderTopWidth: 1, borderTopColor: "#003333", backgroundColor: "#003333", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 10, paddingVertical: 9, paddingHorizontal: 18 },
   status: { fontSize: 10, color: "#99baba" },
