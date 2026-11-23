@@ -1,0 +1,122 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit to build
+        type: string
+        default: ""
+      version:
+        description: Android release version
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+env:
+  CI: "true"
+  EXPO_NO_TELEMETRY: "1"
+
+jobs:
+  checks:
+    name: Native and UI checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            cmake ninja-build g++ python3 libfftw3-dev libusb-1.0-0-dev
+      - run: npm ci
+      - name: Build native engine and tests
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 2
+      - name: Test decoder, recording and all WAV playback modes
+        run: >-
+          ctest --test-dir build --output-on-failure
+          -R '^(iq-wav-recording|ui-native-spectrum|worker-backpressure|stream-chunk-equivalence|c-api-contract|c-api-sgb-formats|decoder-primitives|beacon-fields|(stream-|worker-)?sample-.*)$'
+      - run: npm run typecheck --workspace @sarsat/mobile
+      - run: npm run ui:test
+      - run: npm run ui:build
+
+  android:
+    name: Android APK
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK components
+        run: >-
+          sdkmanager "platforms;android-37" "build-tools;37.0.0"
+          "ndk;27.1.12297006" "cmake;3.22.1"
+      - run: npm ci
+      - name: Apply release version
+        if: inputs.version != ''
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const file = "apps/mobile/app.json";
+          const config = JSON.parse(fs.readFileSync(file, "utf8"));
+          config.expo.version = process.env.RELEASE_VERSION;
+          fs.writeFileSync(file, JSON.stringify(config, null, 2) + "\n");
+          NODE
+      - name: Generate Android project
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform android --no-install
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build release APK with current Expo debug key
+        working-directory: apps/mobile/android
+        run: >-
+          bash ./gradlew assembleRelease --no-daemon --max-workers=2 --stacktrace
+          '-Dorg.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8'
+      - name: Verify and package APK
+        run: |
+          apk=apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose "$apk"
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile("apps/mobile/android/app/build/outputs/apk/release/app-release.apk") as apk:
+              for abi in ("arm64-v8a", "x86_64"):
+                  assert f"lib/{abi}/libsarsat-native.so" in apk.namelist(), f"Missing native engine: {abi}"
+              assert "assets/index.android.bundle" in apk.namelist(), "Missing application bundle"
+          PY
+          mkdir -p artifacts
+          cp "$apk" artifacts/SarsatSDR.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: artifacts/SarsatSDR.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

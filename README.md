@@ -383,6 +383,25 @@ une compilation EAS sans `--local` televerse le code vers les serveurs Expo.
 
 ## Utilisation
 
+### GitHub Actions : build et release Android
+
+Le workflow **Build** s'execute sur les push de `main`, les pull requests et
+manuellement. Il compile le moteur C++, verifie les regressions WAV
+(batch, streaming et worker), les tests de l'interface et les builds Web/Android.
+L'artefact `android-apk`, conserve 14 jours, contient `SarsatSDR.apk`
+pour les architectures `arm64-v8a` et `x86_64`.
+
+Le workflow **Release** reconstruit et teste le commit d'un tag existant
+`vMAJOR.MINOR.PATCH`, par exemple `v0.2.0`. Il demarre au push du tag ou via
+**Actions > Release > Run workflow**, en renseignant ce meme tag.
+La version Android reprend celle du tag. La release publie
+`SarsatSDR-v0.2.0.apk`, sa somme SHA-256 et les notes generees par GitHub.
+Les tags tels que `v0.2.0-rc.1` produisent une prerelease.
+
+Aucun secret de signature n'est requis : ces APK utilisent la cle debug Expo
+actuelle et restent destines aux tests, pas a une diffusion de production.
+Seul le job de publication dispose du droit `contents: write`.
+
 Le bouton du bandeau, a droite de RECEIVING / STOPPED, ouvre la cle
 (triangle vert) ou arrete la session (carre rouge). L'arret attend la fermeture USB et le vidage DSP avant
 une autre session. Avec plusieurs cles, choisir bus/adresse dans Settings.
