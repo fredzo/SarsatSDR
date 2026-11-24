@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag, e.g. v0.2.0 or v0.2.0-rc.1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Resolve release tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - name: Validate version tag
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const tag = process.env.RELEASE_TAG;
+          if (!/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(tag)) {
+            throw new Error("Expected an existing vMAJOR.MINOR.PATCH[-prerelease] tag");
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=${tag}\nversion=${tag.slice(1)}\n`);
+          NODE
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ steps.version.outputs.tag }}
+          persist-credentials: false
+      - name: Resolve immutable commit
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build release APK
+    needs: version
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ needs.version.outputs.sha }}
+      version: ${{ needs.version.outputs.version }}
+
+  publish:
+    name: Publish GitHub release
+    needs: [version, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.version.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: artifacts
+      - name: Generate checksum
+        working-directory: artifacts
+        run: |
+          mv SarsatSDR.apk "SarsatSDR-${RELEASE_TAG}.apk"
+          sha256sum "SarsatSDR-${RELEASE_TAG}.apk" > "SarsatSDR-${RELEASE_TAG}.apk.sha256"
+      - name: Create release
+        run: |
+          flags=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" \
+            "artifacts/SarsatSDR-${RELEASE_TAG}.apk" \
+            "artifacts/SarsatSDR-${RELEASE_TAG}.apk.sha256" \
+            --verify-tag --title "SarsatSDR ${RELEASE_TAG}" --generate-notes \
+            --notes "APK de test signe avec la cle debug Expo actuelle, pour arm64-v8a et x86_64. Ne pas utiliser cette signature pour une diffusion de production." \
+            "${flags[@]}"
