@@ -68,6 +68,10 @@ jobs:
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ needs.version.outputs.tag }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ needs.version.outputs.tag }}
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: android-apk
@@ -84,6 +88,6 @@ jobs:
           gh release create "$RELEASE_TAG" \
             "artifacts/SarsatSDR-${RELEASE_TAG}.apk" \
             "artifacts/SarsatSDR-${RELEASE_TAG}.apk.sha256" \
-            --verify-tag --title "SarsatSDR ${RELEASE_TAG}" --generate-notes \
-            --notes "APK de test signe avec la cle debug Expo actuelle, pour arm64-v8a et x86_64. Ne pas utiliser cette signature pour une diffusion de production." \
+            --verify-tag --title "SarsatSDR ${RELEASE_TAG}" --notes-from-tag \
+            --notes "Test APK signed with the current Expo debug key, for arm64-v8a and x86_64. This signing key is not suitable for production distribution." \
             "${flags[@]}"

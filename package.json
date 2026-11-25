@@ -1,6 +1,6 @@
 {
   "name": "sarsat-sdr",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "SarsatSDR - reception RTL-SDR et decodage natif des balises COSPAS-SARSAT 406 MHz FGB/SGB",
   "type": "commonjs",
   "workspaces": [

@@ -396,7 +396,9 @@ The **Release** workflow rebuilds and tests the commit of an existing
 `vMAJOR.MINOR.PATCH` tag, such as `v0.2.0`. It starts when the tag is pushed or through
 **Actions > Release > Run workflow**, specifying that same tag.
 The Android version is taken from the tag. The release publishes
-`SarsatSDR-v0.2.0.apk`, its SHA-256 checksum, and GitHub-generated release notes.
+`SarsatSDR-v0.2.0.apk`, its SHA-256 checksum, and release notes from the tag message.
+Use an annotated tag whose message describes the changes; a lightweight tag uses
+its commit message instead. The workflow prepends the APK signing warning.
 Tags such as `v0.2.0-rc.1` produce a prerelease.
 
 No signing secret is required: these APKs use the current Expo debug key
