@@ -66,7 +66,7 @@ export type AcquisitionChannel = z.infer<typeof acquisitionChannelSchema>;
 export const nativeEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("session"), source: z.enum(["rtl", "sample"]), sampleRateHz: finite.positive(),
     centerHz: finite, durationSeconds: finite.nonnegative().nullable(), noisePrerollMs: finite.optional(),
-    label: z.string().optional() }),
+    label: z.string().optional(), startedAt: z.iso.datetime().optional() }),
   z.object({ type: z.literal("spectrum"), timeSeconds: finite, startHz: finite, binWidthHz: finite.positive(),
     displayOffsetDb: finite, fullBandwidthDbm: finite.nullable(), dbfs: z.array(finite.nullable()).length(1024) }),
   z.object({ type: z.literal("acquisition"), channels: z.array(acquisitionChannelSchema).max(10)

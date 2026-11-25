@@ -35,8 +35,10 @@ No receiver at hand? Explore the app with the included sample recordings.
   notifications, and an adjustable countdown help you monitor reception.
 - **Record and replay.** Save live I/Q recordings on Android, replay included
   samples, or open your own compatible WAV captures.
-- **Inspect and share.** Browse up to 200 received frames, examine signal traces,
-  export JSON, or copy and share decoded hexadecimal data and links.
+- **Keep your reception sessions.** Automatically save the latest 200 frames
+  per acquisition day, reopen past sessions, and download them as JSON.
+- **Inspect and share.** Examine signal traces, or copy and share decoded
+  hexadecimal data and links.
 
 For a screen-by-screen walkthrough, numbered screenshots, and animated examples,
 see the [detailed application guide](docs/README.md).
@@ -131,7 +133,7 @@ During live RTL-SDR reception, the Player button changes from **PLAY** to
 progress bar confirm that recording is active.
 
 Captures are saved under `Download/SarsatSDR` as
-`capture-YYYY-MM-DD_HH-mm-ss.wav`. Tap **STOP** once to finish the recording
+`capture-DD-MM-YYYY_HH-mm-ss.wav`. Tap **STOP** once to finish the recording
 without stopping reception, or again to stop reception too.
 
 Open the saved file later with **OPEN WAV** to replay it.

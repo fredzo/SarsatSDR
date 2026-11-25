@@ -1,6 +1,18 @@
 import { beaconLocator, beaconPosition } from "@sarsat/shared/beacon-position";
 import type { Frame } from "@sarsat/shared/protocol";
 
+export function receivedTime(received: string) {
+  const date = new Date(received);
+  if (!Number.isFinite(date.getTime())) throw new RangeError(`Invalid reception timestamp: ${received}`);
+  return `${date.toLocaleDateString("en-GB")} ${date.toLocaleTimeString("en-GB", { hour12: false })}.${String(date.getMilliseconds()).padStart(3, "0")}`;
+}
+
+export function headerStatus(frame: Frame, compact = false) {
+  if (frame.generation !== 1 || !frame.headerErrors) return null;
+  const description = `HEADER ${frame.headerErrors} bit${frame.headerErrors > 1 ? "s" : ""} mismatch`;
+  return { text: compact ? `HDR ${frame.headerErrors}` : description, accessibilityLabel: description, tone: "corrected" } as const;
+}
+
 export function formatFieldFrequencies(value: string) {
   return value.replace(/\b(\d+(?:\.\d+)?)\s*(GHz|MHz|kHz|Hz)\b/g,
     (_, frequency: string, unit: string) => `${Number(frequency).toFixed(3)} ${unit}`);

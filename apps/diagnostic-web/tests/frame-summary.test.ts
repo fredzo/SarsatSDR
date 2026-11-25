@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Frame } from "@sarsat/shared/protocol";
 import { beaconLocator, geoUrl } from "@sarsat/shared/beacon-position";
-import { fitExtraFields, formatFieldFrequencies, frameDetailType, frameSummary } from "../../mobile/src/frame-summary";
+import { fitExtraFields, formatFieldFrequencies, frameDetailType, frameSummary, headerStatus, receivedTime } from "../../mobile/src/frame-summary";
 
 const frame = (generation: 1 | 2, fields: NonNullable<Frame["fields"]>): Frame => ({
   generation, mode: "normal", timeSeconds: 0, frequencyOffsetHz: 0, beaconType: generation === 1 ? "EPIRB" : "ELT",
@@ -103,4 +103,25 @@ test("Extra fields fit their measured column heights, skipping unknown or oversi
 test("Decoded frequency labels display three decimals without changing other numbers", () => {
   assert.equal(formatFieldFrequencies("121.5 MHz / 9 GHz SART, TAC 123"), "121.500 MHz / 9.000 GHz SART, TAC 123");
   assert.equal(formatFieldFrequencies("No device"), "No device");
+});
+
+test("Table header mismatch badges stay compact while preserving the full accessible description", () => {
+  for (const errors of [1, 3]) {
+    const value = { ...frame(1, []), headerErrors: errors };
+    const compact = headerStatus(value, true)!;
+    assert.equal(compact.text, `HDR ${errors}`);
+    assert.ok(compact.text.length <= 5, "Mode must not reserve space for the full mismatch sentence");
+    assert.equal(compact.accessibilityLabel, `HEADER ${errors} bit${errors > 1 ? "s" : ""} mismatch`);
+    assert.equal(headerStatus(value)?.text, compact.accessibilityLabel);
+  }
+  assert.equal(headerStatus({ ...frame(1, []), headerErrors: 0 }, true), null);
+  assert.equal(headerStatus({ ...frame(2, []), headerErrors: 3 }, true), null);
+});
+
+test("Reception timestamps use local European dates and three millisecond digits", () => {
+  const local = new Date(2026, 0, 2, 0, 4, 5, 6);
+  assert.equal(receivedTime(local.toISOString()), "02/01/2026 00:04:05.006");
+  const secondsOnly = new Date(2026, 11, 31, 23, 59, 59);
+  assert.equal(receivedTime(secondsOnly.toISOString().replace(".000Z", "Z")), "31/12/2026 23:59:59.000");
+  assert.throws(() => receivedTime("invalid"), /Invalid reception timestamp/);
 });

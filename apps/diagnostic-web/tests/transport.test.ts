@@ -146,25 +146,35 @@ test("RTL capture and worker overflows preserve the error and restart with the s
     return { stop() {}, kill() {} };
   }, () => ["sgb.wav"], sample => sample, event => events.push(event));
   const overflow = "cospas-cli: RTL-SDR I/Q acquisition queue full; sample continuity lost";
+  const startedAt = "2026-11-25T23:59:59.000Z";
+  const session = JSON.stringify({ type: "session", source: "rtl", centerHz: 406050000,
+    sampleRateHz: 921600, durationSeconds: null });
+  const announce = () => {
+    launches.at(-1)!.engine.line(session);
+    assert.equal(core.lastSession?.startedAt, startedAt);
+  };
   const workerOverflow = "cospas-cli: Worker input queue is full; block was not accepted.";
   const fail = (message: string) => {
     const { engine } = launches.at(-1)!;
     engine.stderr(message);
     engine.close(1);
   };
-  core.start(command);
+  core.start(command, startedAt);
+  announce();
   fail(overflow);
   assert.equal(core.status, "retrying");
   assert.ok(events.some(event => event.type === "error" && event.message.startsWith(overflow)));
   assert.equal(launches.length, 1);
   t.mock.timers.tick(1000);
   assert.equal(launches.length, 2);
+  announce();
   assert.deepEqual(launches[1].args, launches[0].args);
   fail(workerOverflow);
   assert.equal(core.status, "retrying");
   assert.ok(events.some(event => event.type === "error" && event.message.startsWith(workerOverflow)));
   t.mock.timers.tick(1000);
   assert.equal(launches.length, 3);
+  announce();
   assert.deepEqual(launches[2].args, launches[0].args);
   fail(workerOverflow);
   core.stop();
@@ -239,7 +249,8 @@ test("RTL retuning restarts only after shutdown, keeps settings, and Stop cancel
     return { stop() { stops++; }, kill() {} };
   }, () => ["sgb.wav"], sample => sample, event => events.push(event));
   assert.throws(() => core.retune(145825123), /active RTL-SDR/);
-  core.start(command);
+  const startedAt = "2026-11-25T23:59:59.000Z";
+  core.start(command, startedAt);
   assert.throws(() => core.retune(999000001));
   assert.equal(stops, 0);
   core.retune(100000000);
@@ -257,6 +268,9 @@ test("RTL retuning restarts only after shutdown, keeps settings, and Stop cancel
   };
   complete();
   assert.equal(launches.length, 2);
+  launches[1].engine.line(JSON.stringify({ type: "session", source: "rtl", centerHz: 145825123,
+    sampleRateHz: 921600, durationSeconds: null }));
+  assert.equal(core.lastSession?.startedAt, startedAt, "Retuning must not change the acquisition day");
   assert.deepEqual(launches[1].args, argumentsFor({ ...command, centerHz: 145825123 }, [], root));
   assert.deepEqual(events.filter(event => event.type === "error"), []);
   core.retune(999000000);

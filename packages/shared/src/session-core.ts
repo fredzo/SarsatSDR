@@ -57,12 +57,14 @@ export class SessionCore {
   private retry: ReturnType<typeof setTimeout> | null = null;
   private command: StartCommand | null = null;
   private pendingRetune: StartCommand | null = null;
+  private startedAt = "";
   constructor(private readonly launch: EngineLauncher, private readonly sampleList: () => string[],
     private readonly samplePath: (sample: string) => string, private readonly emit: (event: ServerEvent) => void) {}
 
-  start(command: StartCommand) {
+  start(command: StartCommand, startedAt = new Date().toISOString()) {
     if (this.engine || this.retry) throw new Error("Session already active; stop before changing the source or settings");
     const args = argumentsFor(command, this.sampleList(), this.samplePath);
+    this.startedAt = startedAt;
     this.command = command;
     this.status = "starting";
     this.lastSession = null;
@@ -82,6 +84,7 @@ export class SessionCore {
           }
           if (event.type === "session") {
             event.label = command.source === "sample" ? command.sample : "RTL-SDR";
+            event.startedAt = startedAt;
             this.lastSession = event;
           }
           if (event.type === "session" && this.status !== "stopping") {
@@ -105,7 +108,7 @@ export class SessionCore {
         const retune = this.pendingRetune;
         this.pendingRetune = null;
         if (retune && terminal && (code === 0 || code === 2)) {
-          this.start(retune);
+          this.start(retune, startedAt);
           return;
         }
         if (this.status !== "stopping" && command.source === "rtl" &&
@@ -115,7 +118,7 @@ export class SessionCore {
           this.status = "retrying";
           this.retry = setTimeout(() => {
             this.retry = null;
-            this.start(command);
+            this.start(command, startedAt);
           }, 1000);
           fail(`${message}\nRetrying RTL-SDR acquisition…`);
           this.emit({ type: "status", status: this.status });
@@ -137,7 +140,7 @@ export class SessionCore {
     if (!this.command || this.command.source !== "rtl" || this.status === "idle")
       throw new Error("Retuning requires an active RTL-SDR session");
     const command = { ...this.command, centerHz };
-    if (this.retry) { this.stop(); this.start(command); return; }
+    if (this.retry) { const startedAt = this.startedAt; this.stop(); this.start(command, startedAt); return; }
     this.pendingRetune = command;
     this.requestStop();
   }

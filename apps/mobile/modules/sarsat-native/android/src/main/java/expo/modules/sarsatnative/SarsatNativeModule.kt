@@ -45,7 +45,7 @@ class SarsatNativeModule : Module() {
       throw CodedException("I/Q recording to shared storage requires Android 10 or later")
     if (!rtlActive || engine == null) throw CodedException("I/Q recording requires a running RTL-SDR acquisition")
     if (recording != null) throw CodedException("An I/Q recording is already active")
-    val name = "capture-${SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())}.wav"
+    val name = "capture-${SimpleDateFormat("dd-MM-yyyy_HH-mm-ss", Locale.US).format(Date())}.wav"
     val values = ContentValues().apply {
       put(MediaStore.MediaColumns.DISPLAY_NAME, name)
       put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")

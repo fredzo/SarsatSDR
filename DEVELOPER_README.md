@@ -47,7 +47,8 @@ from the command line without a graphical interface.
 - Animated scrolling from 0.25x to 4x, default 1x: visible history from 28 to
   1.75 seconds, seven seconds by default. Texture and position are synchronized
   in a single Skia render on Android to prevent backward jumps.
-- A 200-frame history, detailed fields, JSON export, an OpenStreetMap map,
+- Persisted daily sessions with the latest 200 frames per acquisition day,
+  detailed fields, JSON file export, an OpenStreetMap map,
   and Google Maps / Waze links. The map requires Internet access.
 - FGB FM audio for RTL-SDR and WAV (Android and Web), enabled by default with
   a default volume of 50%, independent of notifications. The strongest FGB candidate
@@ -405,7 +406,37 @@ Only the publishing job has `contents: write` permission.
 The header button, to the right of RECEIVING / STOPPED, opens the device
 (green triangle) or stops the session (red square). Stopping waits for USB shutdown and DSP draining before
 another session. With multiple devices, select the bus/address in Settings.
-Settings are locked during a session and are not yet saved.
+Hardware and decoder settings are locked during acquisition. App settings are
+persisted separately from frame sessions.
+
+Daily frame sessions use the local calendar date captured at acquisition start,
+for both RTL-SDR and WAV sources. Midnight, automatic retries, and retuning do not
+change that date. `SessionCore` annotates session events with `startedAt` and
+preserves it across retries and retuning, including for a browser joining an
+already-running acquisition.
+
+`apps/mobile/src/frame-sessions.ts` serializes storage operations, validates
+versioned daily records, and retains the latest 200 complete entries, including
+traces. Android stores one JSON file per day under the private document directory
+(`frame-sessions/YYYY-MM-DD.json`), replacing files through a temporary file and
+rename; it does not put large trace arrays into AsyncStorage. Web uses IndexedDB
+at the UI's origin. Storage failures are reported in the UI.
+
+Frames exposes idle-only session loading, confirmed deletion, and dated JSON
+exports. Exports preserve the `Entry[]` format, including hidden frames and all
+metadata. Android uses the Storage Access Framework to create an
+`application/json` file in a user-selected folder, rather than sharing a large
+text Intent; Web downloads a Blob. Historical sessions cannot be cleared.
+Starting acquisition restores today's history before starting the engine.
+User-visible dates use `DD/MM/YYYY`; JSON exports use
+`sarsat-decodes-DD-MM-YYYY.json`. Internal session keys, private storage filenames,
+and JSON timestamps retain ISO formats for compatibility and chronological sorting.
+
+Player preroll feedback derives its PREROLL/PLAYING label and remaining
+milliseconds from processed-sample metrics, not a separate wall clock.
+Settings shows the application version from `apps/mobile/app.json`, which the
+release workflow updates before bundling. FGB controls are grouped in rows:
+OverPeak/Average/RunTime, Alpha/Beta/Zeta, the three error limits, then max candidates.
 
 DSP defaults:
 
@@ -459,7 +490,7 @@ Player uses the same 75/25 split, without scrolling, with progress
 across the full width at the bottom. The supplied samples use a center of 406.050 MHz.
 During RTL-SDR reception, PLAY becomes RECORD (red). On Android 10+,
 RECORD saves the I/Q stream as a stereo 16-bit PCM WAV at 921600 samples/s
-in `Download/SarsatSDR/capture-YYYY-MM-DD_HH-mm-ss.wav`.
+in `Download/SarsatSDR/capture-DD-MM-YYYY_HH-mm-ss.wav`.
 The PLAYING and RECORDING labels indicate the current action; while
 recording, the red bottom bar scrolls continuously.
 STOP first finalizes the WAV without interrupting reception; a second STOP

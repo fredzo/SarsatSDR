@@ -5,17 +5,17 @@ import { Picker } from "@react-native-picker/picker";
 import Slider from "@react-native-community/slider";
 import * as Clipboard from "expo-clipboard";
 import Svg, { G, Path, Polyline, Text as SvgText } from "react-native-svg";
-import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileSearch, FileText, FlaskConical, FolderOpen, Globe, MapPin,
+import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileSearch, FileText, FlaskConical, FolderClock, FolderOpen, Globe, MapPin,
   Navigation, Play, BoomBox, Radio, RadioTower, RefreshCw, Settings as SettingsIcon, Square, Usb, type LucideIcon,
   ArrowBigRight,
-  ArrowBigLeft, Circle, Copy, ExternalLink, Minus, Pencil, Plus, Share2, X } from "lucide-react-native";
+  ArrowBigLeft, Circle, Copy, ExternalLink, Minus, Pencil, Plus, Share2, Trash2, X } from "lucide-react-native";
 import { startSchema, playbackConfiguration, type Frame, type Info, type Settings, type SpectrumEvent,
   type Diagnostics, type AcquisitionChannel, type ServerEvent } from "@sarsat/shared/protocol";
 import { beaconLocator, beaconPosition, geoUrl, googleMapsUrl, wazeUrl } from "@sarsat/shared/beacon-position";
 import { Spectrum } from "./Spectrum";
 import { BeaconMap } from "./BeaconMap";
 import { createTransport } from "./transport";
-import { fitExtraFields, formatFieldFrequencies, frameDetailType, frameSummary } from "./frame-summary";
+import { fitExtraFields, formatFieldFrequencies, frameDetailType, frameSummary, headerStatus, receivedTime } from "./frame-summary";
 import type { Transport } from "./transport-types";
 import { AcquisitionSpinner, type CountdownStart } from "./AcquisitionSpinner";
 import { frameNotification, isFrameFiltered, receptionPreferencesSchema } from "./reception-preferences";
@@ -24,8 +24,11 @@ import { appPreferencesSchema } from "./app-preferences";
 import { useReceptionAudio } from "./use-reception-audio";
 import { createFmAudio } from "./fm-audio";
 import { OfficialDecoder } from "./OfficialDecoder";
+import { FrameSessions, formatSessionDate, localSessionDate, sessionExport, type Entry, type FrameSession, type SessionSummary } from "./frame-sessions";
+import { createSessionStorage, saveJson } from "./session-storage";
+import { playbackProgress } from "./playback-progress";
+import appConfig from "../app.json";
 
-type Entry = { id: number; frame: Frame; received: string; source: string; centerHz: number };
 type Action = { label: string; icon: LucideIcon; run: () => void; kind?: "stop" };
 function ActionPopup({ title, actions, close }: { title: string; actions: Action[]; close: () => void }) {
   return <Modal transparent animationType="fade" onRequestClose={close}>
@@ -58,10 +61,6 @@ function ModeIcon({ mode }: { mode: Frame["mode"] }) {
     <Icon size={16} color={mode === "self_test" ? "#C084FC" : "#60A5FA"} />
   </View>;
 }
-const receivedTime = (received: string) => {
-  const date = new Date(received);
-  return `${date.toLocaleDateString("en-GB")} ${date.toLocaleTimeString("en-GB", { hour12: false })}.${received.slice(20, 23)}`;
-};
 const tabs = ["Detection", "Frames", "Map", "Detail", "Signal", "Receiver", "Player", "Settings"] as const;
 type Tab = typeof tabs[number];
 const tabIcons: Record<Tab, LucideIcon> = { Detection: RadioTower, Frames: FileText, Map: MapPin,
@@ -71,11 +70,11 @@ const numericSettings: { key: keyof Pick<Settings, "fgbAlpha" | "fgbBeta" | "fgb
   "sgbFrequencyGain" | "sgbFilter" | "sgbFeedback" | "sgbMaxErrors" | "searchDepth">;
   label: string; min?: number; max?: number }[] = [
   { key: "fgbOverPeakDb", label: "FGB OverPeak · dB" },
+  { key: "fgbAverage", label: "FGB Detection Average", max: 1 },
+  { key: "fgbRuntimeMs", label: "FGB RunTime · ms", min: 1 },
   { key: "fgbAlpha", label: "FGB PLL Alpha" },
   { key: "fgbBeta", label: "FGB PLL Beta" },
   { key: "fgbZeta", label: "FGB PLL Zeta" },
-  { key: "fgbAverage", label: "FGB Detection Average", max: 1 },
-  { key: "fgbRuntimeMs", label: "FGB RunTime · ms", min: 1 },
   { key: "fgbMaxErrors", label: "FGB BCH-1 max errors", max: 3 },
   { key: "fgbBch2MaxErrors", label: "FGB BCH-2 max errors", max: 2 },
   { key: "fgbHeaderErrors", label: "FGB header max errors", max: 3 },
@@ -203,9 +202,9 @@ function bchStatus(frame: Frame, n: number, compact = false) {
 function bchBadges(frame: Frame, compact = false) {
   return frame.bch.map((_, n) => <Badge key={n} {...bchStatus(frame, n, compact)} />);
 }
-function headerBadge(frame: Frame) {
-  return frame.generation === 1 && frame.headerErrors ?
-    <Badge text={`HEADER ${frame.headerErrors} bit${frame.headerErrors > 1 ? "s" : ""} mismatch`} tone="corrected" /> : null;
+function headerBadge(frame: Frame, compact = false) {
+  const status = headerStatus(frame, compact);
+  return status ? <Badge {...status} /> : null;
 }
 const Badges = ({ children }: { children: ReactNode }) => <View style={s.badges}>{children}</View>;
 type SignalTrace = NonNullable<Frame["traces"]>["phase"];
@@ -390,7 +389,7 @@ function Signal({ entry }: { entry: Entry | undefined }) {
     return <View style={s.panel}>
       <Text style={[s.h2, { marginBottom: 3 }]}>Signal <Text style={s.h2Small}>Current frame · latest received by default</Text></Text>
       {!entry ? <Text style={[s.empty, { paddingVertical: 80 }]}>No frames received.</Text> : <SignalPlots key={entry.id} frame={entry.frame}>
-        <Text style={s.detail}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.source} · Received: {entry.received}</Text>
+        <Text style={s.detail}>{entry.frame.generation === 1 ? "FGB" : "SGB"} · {entry.source} · Received: {receivedTime(entry.received)}</Text>
         <Text selectable style={[s.mono, s.code]}>{entry.frame.correctedHex}</Text>
         <Text style={s.detail}>{frameMhz(entry)} MHz · t = {entry.frame.timeSeconds.toFixed(6)} s · Δf = {entry.frame.frequencyOffsetHz.toFixed(3)} Hz</Text>
         <Badges>{bchBadges(entry.frame)}{headerBadge(entry.frame)}</Badges>
@@ -406,25 +405,24 @@ const FrameRow = memo(function FrameRow({ entry, index, locator, widths, selecte
     accessibilityHint={`Mode: ${modeLabel(entry.frame.mode)}`} accessibilityState={{ selected }} onPress={() => select(entry.id)}
     style={[s.tr, { height: frameRowHeight }, selected && { backgroundColor: "#004444" }]}>
     <Text style={[s.td, s.mono, { width: widths[0] }]}>
-      {new Date(entry.received).toLocaleDateString("en-GB")}{"\n"}
-      {new Date(entry.received).toLocaleTimeString("en-GB", { hour12: false })}.{entry.received.slice(20, 23)}
+      {receivedTime(entry.received).replace(" ", "\n")}
     </Text>
     <Text style={[s.td, s.mono, { width: widths[1] }]}>{entry.frame.generation === 1 ? "FGB" : "SGB"}</Text>
     <Text numberOfLines={2} style={[s.td, s.mono, { width: widths[2] }]}>{entry.frame.beaconType}</Text>
     <View style={[s.tableBadges, { width: widths[3] }]}>
-      <View style={s.tableModeIcon}><ModeIcon mode={entry.frame.mode} /></View>{!compact && headerBadge(entry.frame)}
+      <View style={s.tableModeIcon}><ModeIcon mode={entry.frame.mode} /></View>{!compact && headerBadge(entry.frame, true)}
     </View>
     <Text style={[s.td, s.mono, { width: widths[4] }]}>{frameMhz(entry)}</Text>
     <Text style={[s.td, s.mono, { width: widths[5] }]}>{locator}</Text>
     <View style={[s.tableBadges, { width: widths[6] }]}>{bchBadges(entry.frame, true)}</View>
   </Pressable>;
 });
-const FrameTable = memo(function FrameTable({ entries, active, select, compact = false, filtered = false }: {
+const FrameTable = memo(function FrameTable({ entries, active, select, glyphWidth, compact = false, filtered = false }: {
   entries: Entry[]; active: Entry | undefined; select: (id: number) => void; compact?: boolean; filtered?: boolean;
+  glyphWidth: number | null;
 }) {
   const rows = useRef<FlatList<{ entry: Entry; locator: string; index: number }>>(null);
   const viewport = useRef({ y: 0, height: 0 });
-  const [glyphWidth, setGlyphWidth] = useState(7);
   const revealSelection = () => {
     const index = entries.findIndex(entry => entry.id === active?.id);
     if (index < 0 || !viewport.current.height) return;
@@ -440,10 +438,11 @@ const FrameTable = memo(function FrameTable({ entries, active, select, compact =
   const tableRows = useMemo(() => entries.map((entry, index) => {
     const locator = beaconLocator(entry.frame)?.slice(0, 8) ?? "—";
     const values = ["00:00:00.000", entry.frame.generation === 1 ? "FGB" : "SGB", entry.frame.beaconType, "", frameMhz(entry), locator];
-    if (!compact && entry.frame.headerErrors) values[3] = `HEADER ${entry.frame.headerErrors} bits mismatch`;
+    if (!compact) values[3] = headerStatus(entry.frame, true)?.text ?? "";
     return { entry, index, locator, values, bch: entry.frame.bch.map((_, n) => bchStatus(entry.frame, n, true).text) };
   }).reverse(), [entries, compact]);
   const widths = useMemo(() => frameTableHeaders.map((header, n) => {
+    if (glyphWidth === null) return 0;
     const values = n === frameTableHeaders.length - 1 ? tableRows.flatMap(row => row.bch) : tableRows.map(row => row.values[n]);
     const badgePadding = n === frameTableHeaders.length - 1 || (!compact && n === 3 && entries.some(entry => entry.frame.headerErrors)) ? 12 : 0;
     return Math.ceil(Math.max(header.length, ...values.map(value => value.length)) * glyphWidth + 18 + badgePadding);
@@ -452,19 +451,17 @@ const FrameTable = memo(function FrameTable({ entries, active, select, compact =
     <FrameRow {...item} widths={widths} selected={active?.id === item.entry.id} compact={compact} select={select} />,
   [widths, active?.id, compact, select]);
   return <View style={s.fill} accessibilityLabel="Received frames">
-    <Text aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
-      style={s.tableMeasure} onLayout={event => setGlyphWidth(event.nativeEvent.layout.width / 10)}>0000000000</Text>
     {!entries.length ? <View style={s.emptyPane}><Text style={s.emptyStrong}>{filtered ? "All frames are filtered" : "No frames received"}</Text>
       <Text style={s.empty}>{filtered ? "Change display filters in Settings to show stored frames." : "Start the receiver or play an I/Q capture."}</Text></View> :
-      <ScrollView horizontal style={s.fill} contentContainerStyle={{ minWidth: "100%" }}>
+      glyphWidth !== null && <ScrollView horizontal style={s.fill} contentContainerStyle={{ minWidth: "100%" }}>
         <View style={{ minWidth: "100%", width: widths.reduce((a, b) => a + b, 0), flex: 1 }}>
           <View style={[s.tr, s.th]}>{frameTableHeaders.map((name, n) =>
             <Text key={name} style={[s.thText, s.mono, { width: widths[n] }]}>{name}</Text>)}</View>
           <FlatList ref={rows} data={tableRows} renderItem={renderRow} keyExtractor={item => String(item.entry.id)}
             extraData={active?.id} style={s.fill} nestedScrollEnabled accessibilityLabel="Frame rows"
             initialNumToRender={8} maxToRenderPerBatch={8} windowSize={3}
-            initialScrollIndex={Math.max(0, tableRows.findIndex(row => row.entry.id === active?.id))}
             getItemLayout={(_, index) => ({ length: frameRowHeight, offset: index * frameRowHeight, index })}
+            onContentSizeChange={revealSelection}
             onScroll={event => { viewport.current.y = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={16}
             onLayout={event => { viewport.current.height = event.nativeEvent.layout.height; revealSelection(); }} />
         </View>
@@ -567,7 +564,7 @@ const FrameDetail = memo(function FrameDetail({ entry, compact = false }: { entr
           <Text style={[s.detail, s.mono]}>{frameMhz(entry)} MHz · {entry.frame.timeSeconds.toFixed(6)} s</Text>
         </View>
         <View style={s.metadataColumn}>
-          <Text style={s.detail}>Received: {entry.received}{"\n"}Δf: {entry.frame.frequencyOffsetHz.toFixed(3)} Hz</Text>
+          <Text style={s.detail}>Received: {receivedTime(entry.received)}{"\n"}Δf: {entry.frame.frequencyOffsetHz.toFixed(3)} Hz</Text>
           {entry.frame.correctionLimit !== undefined && <Text style={s.detail}>{entry.frame.generation === 1 ? "BCH-1" : "BCH"} correction limit: {entry.frame.correctionLimit}
             {entry.frame.bch.length > 1 && entry.frame.bch2Limit !== undefined ? ` · BCH-2: ${entry.frame.bch2Limit}` : ""}</Text>}
           {entry.frame.headerErrors !== undefined && <Text style={s.detail}>Header errors: {entry.frame.headerErrors}</Text>}
@@ -718,7 +715,24 @@ export default function App() {
   const playSoundRef = useRef(playSound);
   playSoundRef.current = playSound;
   const [countdownStart, setCountdownStart] = useState<CountdownStart | null>(null);
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [storedSession, setStoredSession] = useState<FrameSession>(() => ({
+    version: 1, date: localSessionDate(new Date()), entries: [],
+  }));
+  const [history] = useState(() => new FrameSessions(createSessionStorage(), setStoredSession, setError));
+  const [historyReady, setHistoryReady] = useState(false);
+  const [historyPending, setHistoryPending] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [sessionSummaries, setSessionSummaries] = useState<SessionSummary[]>([]);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [glyphWidth, setGlyphWidth] = useState<number | null>(null);
+  const entries = storedSession.entries;
+  const pastSession = storedSession.date !== localSessionDate(new Date());
+  useEffect(() => {
+    let active = true;
+    void history.initialize().then(() => { if (active) setHistoryReady(true); })
+      .catch(reason => { if (active) setError(`Could not restore today's session: ${String(reason)}`); });
+    return () => { active = false; };
+  }, [history]);
   const [confirmClear, setConfirmClear] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [line, setLine] = useState<SpectrumEvent | null>(null);
@@ -734,7 +748,7 @@ export default function App() {
   const [receiverHeight, setReceiverHeight] = useState(0);
   const [device, setDevice] = useState("");
   const [transport, setTransport] = useState<Transport | null>(null);
-  const [frameSource] = useState({ label: null as string | null, centerHz: 406050000, sequence: 0 });
+  const [frameSource] = useState({ label: null as string | null, centerHz: 406050000 });
 
   async function refresh(target = transport) {
     if (!target) return;
@@ -753,11 +767,13 @@ export default function App() {
   }, [devices]);
 
   useEffect(() => {
+    if (!historyReady) return;
     let active = true;
     const fm = createFmAudio(setError);
     fmAudio.current = fm;
     let unwatchDevices: (() => void) | undefined;
-    const handle = (message: ServerEvent) => {
+    let events = Promise.resolve();
+    const handle = async (message: ServerEvent) => {
       if (!active) return;
       try {
         if (message.type === "status") {
@@ -765,14 +781,19 @@ export default function App() {
           if (message.status === "running" || message.status === "idle") receiverActionPending.current = false;
           setStatus(message.status);
           if (message.status !== "running") setCountdownStart(null);
-          if (message.status === "idle") { setChannels([]); setSgbDetections(0); setFgbDetections(0); }
+          if (message.status === "idle") { history.end(); setChannels([]); setSgbDetections(0); setFgbDetections(0); }
         }
-        else if (message.type === "error") { receiverActionPending.current = false; setError(message.message); }
+        else if (message.type === "error") {
+          if (receiverActionPending.current && !frameSource.label) { history.end(); setStatus("idle"); }
+          receiverActionPending.current = false;
+          setError(message.message);
+        }
         else if (message.type === "recording") {
           setRecordingFile(message.file);
           if (message.saved) setLastRecording(message.saved);
         }
         else if (message.type === "session") {
+          if (!history.acquisitionDate) await history.begin(message.startedAt ? new Date(message.startedAt) : new Date());
           fm.reset();
           setCountdownStart(null);
           frameSource.label = message.label ?? (message.source === "rtl" ? "RTL-SDR" : "WAV I/Q");
@@ -802,9 +823,7 @@ export default function App() {
         })); }
         else if (message.type === "frame") {
           if (!frameSource.label) throw new Error("Frame received before its source was identified");
-          const entry = { id: ++frameSource.sequence, frame: message.frame, received: new Date().toISOString(),
-            source: frameSource.label, centerHz: frameSource.centerHz };
-          setEntries(values => [...values.slice(-199), entry]);
+          const entry = history.append(message.frame, frameSource.label, frameSource.centerHz);
           const preferences = receptionRef.current;
           if (!isFrameFiltered(entry.frame, preferences)) {
             setSelected(entry.id);
@@ -816,7 +835,7 @@ export default function App() {
         }
       } catch (reason) { setError(`Invalid UI event: ${reason instanceof Error ? reason.message : String(reason)}`); }
     };
-    const created = createTransport({ event: handle, connection: (value, reason) => {
+    const created = createTransport({ event: message => { events = events.then(() => handle(message)); }, connection: (value, reason) => {
       if (!active) return;
       setConnected(value);
       if (!value) { fm.reset(); receiverActionPending.current = false; setCountdownStart(null); setChannels([]); setSgbDetections(0); setFgbDetections(0); if (reason) setError(reason); }
@@ -827,7 +846,7 @@ export default function App() {
       unwatchDevices = created.watchDevices?.(next => setInfo(previous => previous && { ...previous, devices: next }));
     }).catch(reason => { if (active) setError(String(reason)); });
     return () => { active = false; fmAudio.current = null; fm.close(); unwatchDevices?.(); created.close(); };
-  }, []);
+  }, [historyReady, history]);
   useEffect(() => {
     if (!reception.fgbFm || reception.fgbFmVolume === 0) fmAudio.current?.reset();
     else fmAudio.current?.setVolume(reception.fgbFmVolume);
@@ -839,22 +858,43 @@ export default function App() {
     fgbMaxCandidates: settings?.fgbMaxCandidates ?? info.settings.fgbMaxCandidates }, sampleProfile) : null;
   const playerSettings = useSampleProfile ? playback?.settings : settings;
   const displayedSettings = tab === "Player" ? playerSettings : settings;
-  function start(source: "rtl" | "sample") {
+  async function start(source: "rtl" | "sample") {
+    if (busy || historyPending || !historyReady || receiverActionPending.current) return false;
+    receiverActionPending.current = true;
     setError("");
     if (source === "sample" && useSampleProfile && !playback) {
       setError("No validated profile for this capture. Select manual mode to use Settings.");
-      return;
+      receiverActionPending.current = false;
+      return false;
     }
     const location = selectedDevice.split(":").map(Number);
     const parsed = startSchema.safeParse({ type: "start", source, centerHz: Math.round(center * 1e6),
       gainIndex: gain, agc, sample, removeDc, noisePrerollMs: preroll, settings, fgbFm: receptionRef.current.fgbFm,
       ...(source === "sample" && useSampleProfile ? playback : {}),
       ...(selectedDevice ? { bus: location[0], address: location[1] } : {}) });
-    if (!parsed.success) { setError(parsed.error.issues.map(issue => issue.message).join(" · ")); return; }
-    setSession(null);
-    if (parsed.data.fgbFm && parsed.data.settings.fgb) fmAudio.current?.activate();
-    transport?.send(parsed.data);
-    return true;
+    if (!parsed.success) {
+      setError(parsed.error.issues.map(issue => issue.message).join(" · "));
+      receiverActionPending.current = false;
+      return false;
+    }
+    setHistoryPending(true);
+    try {
+      if (!transport || !connected) throw new Error("The native engine is disconnected");
+      await history.begin();
+      frameSource.label = null;
+      setSelected(null);
+      setSession(null);
+      setStatus("starting");
+      if (parsed.data.fgbFm && parsed.data.settings.fgb) fmAudio.current?.activate();
+      transport.send(parsed.data);
+      return true;
+    } catch (reason) {
+      history.end();
+      setStatus("idle");
+      receiverActionPending.current = false;
+      setError(`Could not start acquisition: ${String(reason)}`);
+      return false;
+    } finally { setHistoryPending(false); }
   }
   function stop() { transport?.send({ type: "stop" }); }
   async function changeRecording(active: boolean) {
@@ -876,9 +916,8 @@ export default function App() {
   }
   function toggleReceiver() {
     if (receiverActionPending.current) return;
-    receiverActionPending.current = true;
-    if (busy) stop();
-    else if (!start("rtl")) receiverActionPending.current = false;
+    if (busy) { receiverActionPending.current = true; stop(); }
+    else void start("rtl");
   }
   function change<K extends keyof Settings>(key: K, value: Settings[K]) {
     const old = savedRef.current.settings;
@@ -892,17 +931,28 @@ export default function App() {
       replaceSaved({ sample: name, useSampleProfile: false });
     } catch (reason) { setError(String(reason)); }
   }
-  function exportJson() {
-    const json = JSON.stringify(entries, null, 2);
-    if (Platform.OS === "web") {
-      const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-      const link = document.createElement("a"); link.href = url; link.download = "sarsat-decodes.json"; link.click(); URL.revokeObjectURL(url);
-    } else void Share.share({ title: "sarsat-decodes.json", message: json });
+  async function exportJson(date = history.current.date) {
+    const file = date === history.current.date ? sessionExport(history.current) : await history.export(date);
+    await saveJson(file.name, file.json);
+  }
+  async function historyAction(action: () => Promise<void>) {
+    setError("");
+    setHistoryPending(true);
+    try { await action(); }
+    catch (reason) { setError(`Sessions: ${String(reason)}`); }
+    finally { setHistoryPending(false); }
+  }
+  function openSessions() {
+    setSessionsOpen(true);
+    void historyAction(async () => setSessionSummaries(await history.list()));
   }
   const visibleEntries = useMemo(() => entries.filter(entry => !isFrameFiltered(entry.frame, reception)),
     [entries, reception.filterInvalid, reception.filterOrbitographic]);
   const activeFrame = visibleEntries.find(entry => entry.id === selected) ?? visibleEntries.at(-1);
-  const elapsed = session && metrics ? Math.max(0, metrics.samples / session.sampleRateHz - (session.noisePrerollMs ?? 0) / 1000) : 0;
+  const progress = session ? playbackProgress(metrics?.samples ?? 0, session.sampleRateHz, session.noisePrerollMs ?? 0) : null;
+  const elapsed = progress?.elapsedSeconds ?? 0;
+  const playbackActive = busy && session?.source === "sample";
+  const prerollRemaining = playbackActive ? progress?.remainingMs ?? 0 : null;
   const d = metrics?.diagnostics;
   const decoderLocked = busy || !displayedSettings || (tab === "Player" && useSampleProfile);
   const duration = session?.durationSeconds ?? 1;
@@ -915,12 +965,20 @@ export default function App() {
     sgbDetections={sgbDetections} fgbDetections={fgbDetections} compact={compact}
     automatic={waterfallAutomatic} calibrationDb={session?.source === "rtl" ? calibrationDb : 0} relative={session?.source === "sample"} />;
   const frameActions = <View style={[s.row, { padding: 8 }]}>
-    <Text style={[s.h3, { flex: 1, marginBottom: 0 }]}>FRAMES ({frameCount})</Text>
-    <Button iconOnly icon={Eraser} title="Clear frames" disabled={!entries.length} onPress={() => setConfirmClear(true)} />
-    <Button iconOnly icon={Download} title="Export JSON" disabled={!entries.length} onPress={exportJson} />
+    <View style={s.fill}><Text style={[s.h3, { marginBottom: 0 }]}>FRAMES ({frameCount})</Text>
+      {pastSession && <View style={[s.row, { gap: 4, marginTop: 4 }]}>
+        <FolderClock size={12} color="#99baba" /><Text style={s.detail}>{formatSessionDate(storedSession.date)}</Text>
+      </View>}
+    </View>
+    <Button iconOnly icon={FolderClock} title="Saved sessions" disabled={busy || historyPending || !historyReady} onPress={openSessions} />
+    <Button iconOnly icon={Eraser} title="Clear frames" disabled={!entries.length || pastSession || historyPending} onPress={() => setConfirmClear(true)} />
+    <Button iconOnly icon={Download} title="Export JSON" disabled={!entries.length || historyPending}
+      onPress={() => { void exportJson().catch(reason => setError(`JSON export: ${String(reason)}`)); }} />
   </View>;
 
   return <View style={s.main}>
+    <Text aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+      style={s.tableMeasure} onLayout={event => setGlyphWidth(event.nativeEvent.layout.width / 10)}>0000000000</Text>
     {confirmDefaults && <ActionPopup title={`Restore ${confirmDefaults} default settings?`} close={() => setConfirmDefaults(null)} actions={[
       { label: "Cancel", icon: X, run: () => {} },
       { label: "Restore default settings", icon: RefreshCw, kind: "stop", run: () => {
@@ -943,8 +1001,49 @@ export default function App() {
     ]} />}
     {confirmClear && <ActionPopup title="Clear all received frames?" close={() => setConfirmClear(false)} actions={[
       { label: "Cancel", icon: X, run: () => {} },
-      { label: "Clear all frames", icon: Eraser, kind: "stop", run: () => { setEntries([]); setSelected(null); } },
+      { label: "Clear all frames", icon: Eraser, kind: "stop", run: () => {
+        void history.clear().then(() => setSelected(null)).catch(reason => setError(`Could not clear frames: ${String(reason)}`));
+      } },
     ]} />}
+    {confirmDelete && <ActionPopup title={`Delete session ${formatSessionDate(confirmDelete)}?`} close={() => setConfirmDelete(null)} actions={[
+      { label: "Cancel", icon: X, run: () => {} },
+      { label: "Delete session", icon: Trash2, kind: "stop", run: () => {
+        const date = confirmDelete;
+        void historyAction(async () => {
+          const wasLoaded = history.current.date === date;
+          await history.remove(date);
+          if (wasLoaded) { await history.initialize(); setSelected(null); }
+          setSessionSummaries(await history.list());
+        });
+      } },
+    ]} />}
+    {sessionsOpen && !confirmDelete && <Modal transparent animationType="fade" onRequestClose={() => setSessionsOpen(false)}>
+      <View style={s.popupBackdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => setSessionsOpen(false)} accessible={false} />
+        <View style={[s.popup, { width: 650, maxHeight: "85%" }]} accessibilityViewIsModal>
+          <View style={s.popupHeader}><Text style={s.h3}>Saved sessions</Text>
+            <Button iconOnly title="Close sessions" icon={X} onPress={() => setSessionsOpen(false)} />
+          </View>
+          {!!error && <Text accessibilityRole="alert" style={s.errorText}>{error}</Text>}
+          {historyPending && <Text style={s.p}>Loading…</Text>}
+          <ScrollView>
+            {!sessionSummaries.length && !historyPending && <Text style={s.p}>No saved sessions.</Text>}
+            {sessionSummaries.map(item => <View key={item.date} style={[s.row, { flexWrap: "nowrap", paddingVertical: 8 }]}>
+              <View style={s.fill}><Text style={s.small}>{formatSessionDate(item.date)}</Text>
+                <Text style={s.p}>{item.count} frame{item.count === 1 ? "" : "s"}</Text></View>
+              <Button iconOnly title={`Load session ${formatSessionDate(item.date)}`} icon={FolderOpen} disabled={historyPending || busy}
+                onPress={() => { void historyAction(async () => {
+                  await history.load(item.date); setSelected(null); setSessionsOpen(false);
+                }); }} />
+              <Button iconOnly title={`Export session ${formatSessionDate(item.date)}`} icon={Download} disabled={historyPending || busy}
+                onPress={() => { void historyAction(() => exportJson(item.date)); }} />
+              <Button iconOnly title={`Delete session ${formatSessionDate(item.date)}`} icon={Trash2} kind="stop" disabled={historyPending || busy}
+                onPress={() => setConfirmDelete(item.date)} />
+            </View>)}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>}
     <View style={s.titlebar}><View style={s.brand}><RadioTower size={28} color="#3fe6e6" /><Text style={s.brandStrong}>SarsatSDR</Text>
       <Text style={s.brandSpan}>COSPAS-SARSAT · {((session?.centerHz ?? center * 1e6) / 1e6).toFixed(3)} MHz · FGB / SGB</Text></View>
       <View style={s.row}>
@@ -955,7 +1054,7 @@ export default function App() {
         <AcquisitionSpinner running={receiving} start={countdownStart} preferences={reception} play={playSound} />
         <Button iconOnly kind={busy ? "stop" : "primary"} icon={busy ? Square : Play}
           backgroundColor={busy ? "#4a1616" : undefined} title={busy ? "Stop reception" : "Start reception"}
-          disabled={!connected || !preferencesReady || recordingPending || status === "starting" || status === "stopping" || (!busy && (!settings || !info?.devices.length))}
+          disabled={!connected || !preferencesReady || !historyReady || historyPending || recordingPending || status === "starting" || status === "stopping" || (!busy && (!settings || !info?.devices.length))}
           onPress={toggleReceiver} />
       </View></View>
     {!!error && <View accessibilityRole="alert" style={s.error}><Text style={s.errorText}><Text style={{ fontWeight: "bold" }}>ERROR </Text>{error}</Text>
@@ -965,7 +1064,7 @@ export default function App() {
         <View style={s.dashboardTop} accessibilityLabel="Detection spectrum">{spectrum(true)}</View>
         <View style={s.dashboardBottom}>
           <Text style={[s.h3, { marginBottom: 0, padding: 8 }]}>FRAMES ({frameCount})</Text>
-          <FrameTable entries={visibleEntries} active={activeFrame} select={setSelected} filtered={entries.length > 0} compact />
+          <FrameTable entries={visibleEntries} active={activeFrame} select={setSelected} glyphWidth={glyphWidth} filtered={entries.length > 0} compact />
         </View>
       </View>
       <View style={s.dashboardColumn}>
@@ -974,7 +1073,7 @@ export default function App() {
       </View>
     </View>}
     {tab === "Frames" && <View style={s.split}>
-      <View style={[s.splitColumn, { flex: 2 }]}>{frameActions}<FrameTable entries={visibleEntries} active={activeFrame} select={setSelected} filtered={entries.length > 0} /></View>
+      <View style={[s.splitColumn, { flex: 2 }]}>{frameActions}<FrameTable entries={visibleEntries} active={activeFrame} select={setSelected} glyphWidth={glyphWidth} filtered={entries.length > 0} /></View>
       <View style={[s.splitColumn, { flex: 3 }]}><FrameDetail entry={activeFrame} /></View>
     </View>}
     {tab === "Map" && <View style={s.fixedPage}><MapPanel entry={activeFrame} /></View>}
@@ -991,16 +1090,16 @@ export default function App() {
             <Check label="Explicit DC removal" value={useSampleProfile ? playback?.removeDc ?? false : removeDc}
               disabled={busy || !savedReady || useSampleProfile} onChange={value => changeSaved("removeDc", value)} />
             <NumberField style={{ flexShrink: 1 }} label="Noise preroll · ms" disabled={busy || useSampleProfile}
-              value={useSampleProfile ? playback?.noisePrerollMs ?? 0 : preroll} onChange={value => changeSaved("preroll", value)} />
+              value={prerollRemaining ?? (useSampleProfile ? playback?.noisePrerollMs ?? 0 : preroll)} onChange={value => changeSaved("preroll", value)} />
             <View style={s.row}>
               <View style={s.fill}>{rtlAcquisition
                 ? <Button kind="primary" backgroundColor="#b71c1c" icon={Circle} title={recordingFile ? "RECORDING" : "RECORD"}
                     style={{ paddingHorizontal: 8 }}
                     disabled={status !== "running" || !!recordingFile || recordingPending || !transport?.startRecording}
                     onPress={() => { void changeRecording(true); }} />
-                : <Button kind="primary" icon={Play} title={busy && session?.source === "sample" ? "PLAYING" : "PLAY"}
-                    disabled={busy || !connected || !info || !settings || !preferencesReady}
-                    onPress={() => start("sample")} />}</View>
+                : <Button kind="primary" icon={Play} title={playbackActive ? prerollRemaining ? "PREROLL" : "PLAYING" : "PLAY"}
+                    disabled={busy || historyPending || !historyReady || !connected || !info || !settings || !preferencesReady}
+                    onPress={() => { void start("sample"); }} />}</View>
               <View style={s.fill}><Button icon={Square} title="STOP" disabled={!busy || recordingPending}
                 onPress={() => { if (recordingFile) void changeRecording(false); else stop(); }} /></View>
             </View>
@@ -1089,6 +1188,9 @@ export default function App() {
       {tab === "Signal" && <Signal entry={activeFrame} />}
 
       {tab === "Settings" && <View style={s.settingsPage}>
+        <View style={[s.fieldset, s.row, { flexWrap: "nowrap", paddingVertical: 12 }]}>
+          <Text style={[s.h2, { marginBottom: 0 }]}>Version</Text><Text style={s.small}>{appConfig.expo.version}</Text>
+        </View>
         <View style={s.fieldset}>
           <View style={[s.row, { justifyContent: "space-between" }]}><Text style={s.h2}>Filtering</Text>
             <Button title="Default Settings" icon={RefreshCw} disabled={!preferencesReady} onPress={() => setConfirmDefaults("Filtering")} />
@@ -1157,9 +1259,11 @@ export default function App() {
           </View>
           <View style={s.fieldset}><Text style={s.legend}>FGB</Text>
             <View style={s.settingsGrid}>
-              {numericSettings.filter(field => field.key.startsWith("fgb")).map(field => <NumberField key={field.key} style={s.setting} label={field.label} disabled={busy || !settings}
-                onFocus={revealSettingsInput} min={field.min ?? 0} max={field.max}
-                value={settings?.[field.key]} onChange={value => change(field.key, value)} />)}
+              {[0, 3, 6, 9].map(offset => <View key={offset} style={[s.row, { width: "100%", gap: 20 }]}>
+                {numericSettings.slice(offset, Math.min(offset + 3, 10)).map(field => <NumberField key={field.key} style={s.setting} label={field.label} disabled={busy || !settings}
+                  onFocus={revealSettingsInput} min={field.min ?? 0} max={field.max}
+                  value={settings?.[field.key]} onChange={value => change(field.key, value)} />)}
+              </View>)}
             </View>
           </View>
           <View style={s.fieldset}><Text style={s.legend}>SGB</Text>

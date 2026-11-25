@@ -127,16 +127,17 @@ Use Frames to browse the reception history and inspect a message in more detail.
 
 <table>
 <tr>
-<td width="60%" valign="top"><a href="images/frames-guide.png"><img src="images/frames-guide.png" alt="Frames screen with seven numbered controls and information groups" width="100%"></a></td>
+<td width="60%" valign="top"><a href="images/frames-guide.png"><img src="images/frames-guide.png" alt="Frames screen with eight numbered controls and information groups" width="100%"></a></td>
 <td valign="top">
 <ol>
 <li><strong>Frame table.</strong> Tap a row to select a message. Scroll vertically for older messages and horizontally when columns extend beyond the pane.</li>
-<li><strong>Clear frames.</strong> Opens a confirmation dialog. Confirming removes the entire stored history, including currently filtered messages; cancel to keep it.</li>
-<li><strong>Export JSON.</strong> Exports stored messages, including hidden ones. Android opens the system sharing interface; the browser version downloads a JSON file.</li>
+<li><strong>Clear frames.</strong> Opens a confirmation dialog. Confirming removes all frames in today's loaded session, including currently filtered messages. It is disabled for a historical session; other days remain untouched.</li>
+<li><strong>Export JSON.</strong> Exports the loaded session's messages, including hidden ones. On Android, choose a destination folder in the system file picker; the browser downloads a JSON file. Cancelling leaves the session unchanged.</li>
 <li><strong>Reception metadata.</strong> Identifies the generation, source, mode, frequency, reception timestamp, source-relative time, and frequency offset. It also shows applicable correction limits and header errors.</li>
 <li><strong>BCH badges.</strong> Green means no corrections were required; amber indicates corrections; red indicates failure or a configured limit exceeded. FGB can have separate BCH-1 and BCH-2 badges.</li>
 <li><strong>Raw and corrected data.</strong> The original hexadecimal word and the word after BCH processing are shown separately. Text can be selected for copying.</li>
 <li><strong>Decoded information groups.</strong> Identification, location, status, emergency information, and generation-specific fields are grouped by section. Scroll this pane independently of the table.</li>
+<li><strong>Saved sessions.</strong> Opens the daily session manager. Available only when no live reception or WAV playback is active.</li>
 </ol>
 </td>
 </tr>
@@ -147,13 +148,62 @@ reported coordinates, and correction status. Not every frame contains a
 position or every possible field. "Not available" is different from a valid
 zero value.
 
-The history holds up to **200 frames**. Table timestamps are local reception
-times; source-relative times are available in the details. New messages select
+Each daily session holds up to **200 frames**. Dates throughout the app use
+**DD/MM/YYYY**, including saved sessions and confirmation dialogs. Reception
+timestamps use local time, with milliseconds; source-relative times are available in the details. New messages select
 automatically, and selecting a row updates Map, Detail, and Signal.
+
+The Mode column uses a compact **HDR n** badge when an FGB header has mismatched
+bits. The full header-error description remains available in the frame details.
 
 An FGB short or orbitography frame may legitimately have no BCH-2 badge.
 A corrected frame is not automatically invalid. Conversely, a BCH failure
 means its decoded fields should not be treated as reliable.
+
+### 🗂️ Saved sessions
+
+The **folder-clock** button beside Clear frames opens the session manager.
+Stop live reception or WAV playback first: session management is unavailable
+during an acquisition.
+
+<table>
+<tr>
+<td width="60%" valign="top"><a href="images/session-manager-guide.png"><img src="images/session-manager-guide.png" alt="Saved sessions with four numbered information and action groups" width="100%"></a></td>
+<td valign="top">
+<ol>
+<li><strong>Date and frame count.</strong> Saved days are listed newest first, including messages hidden by display filters.</li>
+<li><strong>Load.</strong> Opens this day's frames for browsing in Frames, Map, Detail, and Signal.</li>
+<li><strong>Download.</strong> Exports this day's complete frame entries as a JSON file without changing the displayed session.</li>
+<li><strong>Delete.</strong> Removes this day's internal history after confirmation. Cancel to leave it untouched.</li>
+</ol>
+</td>
+</tr>
+</table>
+
+Sessions are saved automatically in the application's internal storage on
+Android, or in this browser's local IndexedDB storage on Windows. The current
+day is restored when the app opens. Both RTL-SDR reception and WAV playback
+contribute to the same daily history, including frames hidden by display filters.
+Complete decoded data and signal traces are retained.
+
+- A session uses the device's **local calendar date when acquisition starts**.
+  An acquisition continuing after midnight still belongs to its original day.
+- Starting another acquisition on a different day loads or creates that day's
+  session. Starting again on the same day appends to it, retaining its latest
+  200 frames across stops and app restarts.
+- A loaded historical day is identified by a small folder-clock icon and its
+  date in the Frames header. Frame selection also updates Map, Detail, and Signal.
+  Clear frames is disabled for historical days.
+- Starting reception or playback automatically returns to today's session.
+  Deleting the loaded session returns to today's history; deleting another
+  session does not change the displayed frames.
+
+Exports are named `sarsat-decodes-DD-MM-YYYY.json` and contain an array of complete
+frame entries, with reception timestamps, source, center frequency, decoded data,
+and traces. JSON timestamps retain machine-readable ISO 8601 format. Export does not remove frames. Uninstalling the app or clearing its
+storage removes local sessions, so export anything you want to keep. In a browser,
+clearing site data has the same effect; sessions belong to that browser and site
+address.
 
 <a id="map"></a>
 
@@ -328,8 +378,8 @@ the same screen provides recording controls.
 <li><strong>OPEN WAV.</strong> On Android, choose a compatible file through the system picker. A recording made by the app carries its center frequency for playback.</li>
 <li><strong>Validated capture profile.</strong> Uses the tested decoder, DC-removal, and preroll settings for a known capture, without overwriting live radio settings. If no profile exists, use manual mode.</li>
 <li><strong>Explicit DC removal.</strong> Removes the mean I/Q offset before decoding. It is editable in manual mode; a validated profile determines it otherwise.</li>
-<li><strong>Noise preroll.</strong> Prepares decoder state before processing the capture. The engine repeats an initial portion of the WAV; reported frame times exclude this prefix. A profile controls the value when enabled.</li>
-<li><strong>PLAY / STOP.</strong> PLAY starts playback and becomes PLAYING. STOP ends it; there is no pause or seek control.</li>
+<li><strong>Noise preroll.</strong> Prepares decoder state before processing the capture. The engine repeats an initial portion of the WAV; reported frame times exclude this prefix. A profile controls the configured value when enabled. During playback this field counts down the remaining preroll milliseconds from the engine's processed samples, then stays at zero. The configured value returns when playback stops.</li>
+<li><strong>PLAY / STOP.</strong> PLAY starts playback and becomes PREROLL while the prefix is processed, then PLAYING when the capture begins. Without a preroll it becomes PLAYING directly. STOP ends either phase; there is no pause or seek control.</li>
 <li><strong>Active profile summary.</strong> Shows which generations and relevant FGB parameters the selected profile will use. Manual mode instead uses the decoder settings from Settings.</li>
 <li><strong>Progress bar.</strong> Shows progress through the capture. It is an indicator, not a seek slider.</li>
 </ol>
@@ -364,7 +414,7 @@ Received messages remain in the history after playback finishes.
 - Recording requires **Android 10 or later** and writes stereo **16-bit PCM I/Q**
   at **921600 complex samples/s**.
 - Files appear under **Download/SarsatSDR**, named
-  `capture-YYYY-MM-DD_HH-mm-ss.wav`.
+  `capture-DD-MM-YYYY_HH-mm-ss.wav`.
 - Stopping the receiver, retuning, or reconnecting also finalizes the current
   recording. Use **OPEN WAV** later to replay a saved file.
 - RIFF/WAV size is limited to **4 GiB**, approximately **19 minutes**.
@@ -380,6 +430,14 @@ Scroll vertically to reach the three main groups: **Filtering**, **Audio**,
 and **RTL-SDR**. Each has its own confirmed reset action. Settings are saved
 locally and restored on the next launch, except for USB device selection.
 When editing a number, the app keeps the input above the on-screen keyboard.
+
+### ℹ️ Version
+
+The single-line **Version** strip at the top of Settings, before Filtering,
+shows the installed application version. Include it when reporting a problem
+or comparing builds.
+
+![The single-line Version strip at the beginning of Settings](images/settings-version.png)
 
 ### 🔊 Filtering and audio
 
@@ -453,8 +511,8 @@ estimates. Raising calibration does not improve the received signal.
 <td width="60%" valign="top"><a href="images/settings-fgb-guide.png"><img src="images/settings-fgb-guide.png" alt="Advanced FGB settings with four numbered groups" width="100%"></a></td>
 <td valign="top">
 <ol>
-<li><strong>Detection and PLL acquisition.</strong> OverPeak sets the detection peak-above-average threshold. PLL Alpha and Beta control phase/frequency tracking during initial acquisition.</li>
-<li><strong>Tracking and candidate lifetime.</strong> PLL Zeta controls subsequent phase tracking; Detection Average controls detection averaging; RunTime is the processing lifetime of a candidate in milliseconds.</li>
+<li><strong>Detection and candidate lifetime (first row).</strong> OverPeak sets the detection peak-above-average threshold; Detection Average controls detection averaging; RunTime is the processing lifetime of a candidate in milliseconds.</li>
+<li><strong>PLL tracking (second row).</strong> Alpha and Beta control phase/frequency tracking during initial acquisition. Zeta controls subsequent phase tracking.</li>
 <li><strong>Error limits.</strong> BCH-1, BCH-2, and header limits control accepted corrections/mismatches. They do not increase the BCH code's mathematical correction capacity.</li>
 <li><strong>Max candidates.</strong> Limits simultaneous FGB candidates from 1 to 10, default 4. It applies to reception and playback, including validated profiles. Reducing it can leave fewer slots available in a busy band.</li>
 </ol>
