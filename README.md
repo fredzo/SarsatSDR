@@ -16,7 +16,7 @@ No receiver at hand? Explore the app with the included sample recordings.
 
 [Android releases](https://github.com/fredzo/SarsatSDR/releases)
 
-![The Detection dashboard during reception, with spectrum, waterfall, decoded frames, and map](docs/images/detection.png)
+![The Detection dashboard during reception, with spectrum, waterfall, decoded frames, and map](docs/images/waterfall.gif)
 
 *Live reception in the Detection dashboard on an Android tablet.*
 
@@ -134,7 +134,7 @@ without stopping reception, or again to stop reception too.
 Open the saved file later with **OPEN WAV** to replay it.
 Each recording is limited to 4 GiB, approximately 19 minutes.
 
-![The red RECORD button available in Player during live reception](docs/images/player-record.png)
+![Starting I/Q recording, the animated red recording bar, and saving the WAV without stopping reception](docs/images/recorder.gif)
 
 ## 🛠️ For developers
 
