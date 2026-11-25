@@ -1,15 +1,19 @@
 # SarsatSDR
 
-**Watch the signal. Decode the beacon. Explore the position.**
+**Receive and decode COSPAS-SARSAT 406 MHz emergency beacons with an RTL-SDR dongle.**
 
-Turn your Android tablet and an RTL-SDR receiver into a live
-COSPAS-SARSAT 406 MHz decoding station. SarsatSDR brings the radio spectrum,
+SarsatSDR turns your Android tablet and RTL-SDR receiver into a live
+COSPAS-SARSAT 406 MHz decoding station. It brings the radio spectrum,
 decoded messages, beacon details, and a map together in one landscape dashboard.
 
-It supports both first-generation (FGB) and second-generation (SGB) beacons.
-No receiver at hand? Explore the app with nine included signal recordings.
+Both first-generation (FGB) and second-generation (SGB) beacons are supported.
+No receiver at hand? Explore the app with the included sample recordings.
 
 [Android releases](https://github.com/fredzo/SarsatSDR/releases)
+
+![The Detection dashboard during reception, with spectrum, waterfall, decoded frames, and map](docs/images/detection.png)
+
+*A received message opened in the Detail tab on an Android tablet.*
 
 ## What you can do
 
@@ -29,7 +33,12 @@ No receiver at hand? Explore the app with nine included signal recordings.
 - **Inspect and share.** Browse up to 200 received frames, examine signal traces,
   export JSON, or copy and share decoded hexadecimal data and links.
 
+For a screen-by-screen walkthrough, numbered screenshots, and animated examples,
+see the [detailed application guide](docs/README.md).
+
 ## What you need
+
+![SarsatSDR running on a rugged Android tablet connected to an RTL-SDR receiver and antenna](docs/images/tablet-rtl-sdr.jpg)
 
 ### For live reception
 
@@ -44,7 +53,7 @@ Android builds support `arm64-v8a` and `x86_64`. Live I/Q recording requires
 SarsatSDR also runs on Windows through a local browser interface.
 Windows setup is covered in the developer guide linked below.
 
-### For trying the app without a receiver
+### Try the app without a receiver
 
 Just install the Android app and use the bundled recordings.
 Reception, local decoding, and bundled sample playback work offline.
@@ -72,6 +81,8 @@ Current APKs use a debug signing key and are intended for testing.
 
 Use **OPEN WAV** on Android to replay your own stereo I/Q recordings.
 Supported formats are 8-bit PCM, 16-bit PCM, and 32-bit floating-point WAV.
+
+![The Player tab with a bundled recording selected](docs/images/player.png)
 
 ### Receive live signals
 
@@ -103,6 +114,8 @@ Settings to show them; filtering does not delete received frames.
 Your settings are remembered between launches, while the connected USB
 receiver is selected afresh at startup.
 
+![The Map tab with the reported beacon position and navigation links](docs/images/map.png)
+
 ## Keep a recording for later
 
 During live RTL-SDR reception, the Player button changes from **PLAY** to
@@ -115,6 +128,8 @@ without stopping reception, or again to stop reception too.
 
 Open the saved file later with **OPEN WAV** to replay it.
 Each recording is limited to 4 GiB, approximately 19 minutes.
+
+![The red RECORD button available in Player during live reception](docs/images/player-record.png)
 
 ## For developers
 
