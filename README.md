@@ -1,4 +1,9 @@
-# SarsatSDR
+# 📡 SarsatSDR
+
+[![Build](https://github.com/fredzo/SarsatSDR/actions/workflows/build.yml/badge.svg)](https://github.com/fredzo/SarsatSDR/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/fredzo/SarsatSDR)](https://github.com/fredzo/SarsatSDR/releases/latest)
+[![License: GPL v3+](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
+[![Platform: Android](https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white)](https://github.com/fredzo/SarsatSDR/releases)
 
 **Receive and decode COSPAS-SARSAT 406 MHz emergency beacons with an RTL-SDR dongle.**
 
@@ -13,9 +18,9 @@ No receiver at hand? Explore the app with the included sample recordings.
 
 ![The Detection dashboard during reception, with spectrum, waterfall, decoded frames, and map](docs/images/detection.png)
 
-*A received message opened in the Detail tab on an Android tablet.*
+*Live reception in the Detection dashboard on an Android tablet.*
 
-## What you can do
+## ✨ What you can do
 
 - **See bursts as they happen.** A live spectrum and scrolling waterfall reveal
   incoming signals, with peaks that fade slowly enough to inspect.
@@ -36,11 +41,11 @@ No receiver at hand? Explore the app with the included sample recordings.
 For a screen-by-screen walkthrough, numbered screenshots, and animated examples,
 see the [detailed application guide](docs/README.md).
 
-## What you need
+## 🔌 What you need
 
 ![SarsatSDR running on a rugged Android tablet connected to an RTL-SDR receiver and antenna](docs/images/tablet-rtl-sdr.jpg)
 
-### For live reception
+### 📡 For live reception
 
 - An Android device running **Android 8.0 or later**, with USB host/OTG support.
   The interface is designed for tablets in landscape orientation.
@@ -53,15 +58,15 @@ Android builds support `arm64-v8a` and `x86_64`. Live I/Q recording requires
 SarsatSDR also runs on Windows through a local browser interface.
 Windows setup is covered in the developer guide linked below.
 
-### Try the app without a receiver
+### ▶️ Try the app without a receiver
 
 Just install the Android app and use the bundled recordings.
 Reception, local decoding, and bundled sample playback work offline.
 Map tiles and external services require Internet access.
 
-## Get started
+## 🚀 Get started
 
-### Install on Android
+### 📲 Install on Android
 
 1. Check [GitHub Releases](https://github.com/fredzo/SarsatSDR/releases) for
    available APKs and download the one you want to install.
@@ -71,7 +76,7 @@ Map tiles and external services require Internet access.
 
 Current APKs use a debug signing key and are intended for testing.
 
-### Try a recording first
+### ▶️ Try a recording first
 
 1. Open **Player**.
 2. Select a bundled capture, such as `fgb.wav`, and keep the validated playback
@@ -84,7 +89,7 @@ Supported formats are 8-bit PCM, 16-bit PCM, and 32-bit floating-point WAV.
 
 ![The Player tab with a bundled recording selected](docs/images/player.png)
 
-### Receive live signals
+### 📡 Receive live signals
 
 1. Connect the RTL-SDR receiver and antenna to your Android device.
 2. Grant USB access when prompted.
@@ -96,7 +101,7 @@ Supported formats are 8-bit PCM, 16-bit PCM, and 32-bit floating-point WAV.
 
 If several receivers are connected, select the device in **Settings**.
 
-## Find your way around
+## 🧭 Find your way around
 
 | Tab | What it is for |
 |---|---|
@@ -116,7 +121,7 @@ receiver is selected afresh at startup.
 
 ![The Map tab with the reported beacon position and navigation links](docs/images/map.png)
 
-## Keep a recording for later
+## ⏺️ Keep a recording for later
 
 During live RTL-SDR reception, the Player button changes from **PLAY** to
 **RECORD**. Tap it to start a WAV recording; **RECORDING** and a scrolling red
@@ -131,20 +136,20 @@ Each recording is limited to 4 GiB, approximately 19 minutes.
 
 ![The red RECORD button available in Player during live reception](docs/images/player-record.png)
 
-## For developers
+## 🛠️ For developers
 
 See [DEVELOPER_README.md](DEVELOPER_README.md) for the technical description,
 project layout, prerequisites, step-by-step Windows and Android build
 instructions, headless decoding, C API, tests, and GitHub build/release workflows.
 
-## Limitations and distribution
+## ⚠️ Limitations and distribution
 
 Pause/seeking, iOS integrations, and network/SigMF sources remain to be completed.
 WAV files are still loaded in full; USB reception uses bounded queues.
 Capture regressions do not replace RF measurements of sensitivity,
 false positives, and endurance.
 
-## License
+## 📄 License
 
 This project is distributed under the GNU General Public License
 version 3.0 or later (`GPL-3.0-or-later`).

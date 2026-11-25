@@ -1,4 +1,4 @@
-# SarsatSDR application guide
+# 📖 SarsatSDR application guide
 
 Receive, inspect, map, and replay COSPAS-SARSAT 406 MHz beacon signals.
 This guide covers the Android tablet interface, one screen at a time.
@@ -14,7 +14,7 @@ size. The GIFs are real screen captures; they have no sound.
 [Project overview and installation](../README.md) |
 [Developer guide and build instructions](../DEVELOPER_README.md)
 
-## Contents
+## 🧭 Contents
 
 - [First steps](#first-steps)
 - [Detection and shared controls](#detection-and-shared-controls)
@@ -28,9 +28,11 @@ size. The GIFs are real screen captures; they have no sound.
 - [Restoring defaults](#restoring-defaults)
 - [Troubleshooting](#troubleshooting)
 
-## First steps
+<a id="first-steps"></a>
 
-### Try the app without a receiver
+## 🚀 First steps
+
+### ▶️ Try the app without a receiver
 
 1. Open **Player** and choose a bundled WAV capture.
 2. Leave **Validated capture profile** checked.
@@ -40,7 +42,7 @@ size. The GIFs are real screen captures; they have no sound.
 The bundled recordings can be decoded offline. Map tiles and the external
 decoder in Detail require Internet access.
 
-### Start live reception
+### 📡 Start live reception
 
 1. Connect a compatible RTL-SDR receiver and 406 MHz antenna through USB OTG.
 2. Grant Android USB access when prompted.
@@ -55,7 +57,9 @@ is not a saved preference. Decoder and hardware controls are generally locked
 during an active session. Display, filtering, and audio controls have their own
 availability rules; a dimmed control is currently unavailable.
 
-## Detection and shared controls
+<a id="detection-and-shared-controls"></a>
+
+## 📡 Detection and shared controls
 
 Detection is the main monitoring dashboard. It keeps the signal, received
 messages, selected frame, and map visible together.
@@ -83,7 +87,7 @@ Each new unfiltered frame becomes the active selection. When filters hide some
 messages, the frame-list heading can display visible/total counts.
 Filtering does not delete stored messages.
 
-### Watch the waterfall
+### 🌊 Watch the waterfall
 
 ![Real-time reception with moving waterfall, fading FFT peaks, and new decoded messages](images/waterfall.gif)
 
@@ -93,7 +97,9 @@ stronger peaks are clipped visually rather than changing the scale.
 Clipping at the top of this graph is **not** the same as saturation of the
 receiver's analog-to-digital converter.
 
-### Understand the FGB timer
+<a id="understand-the-fgb-timer"></a>
+
+### ⏱️ Understand the FGB timer
 
 ![Close-up of the live acquisition indicator and FGB timer changing during reception](images/countdown.gif)
 
@@ -113,7 +119,9 @@ receiver's analog-to-digital converter.
 Configure these options in [Settings](#settings). A countdown estimates a
 repetition interval; it does not guarantee when another beacon burst will arrive.
 
-## Frames
+<a id="frames"></a>
+
+## 📋 Frames
 
 Use Frames to browse the reception history and inspect a message in more detail.
 
@@ -147,7 +155,9 @@ An FGB short or orbitography frame may legitimately have no BCH-2 badge.
 A corrected frame is not automatically invalid. Conversely, a BCH failure
 means its decoded fields should not be treated as reliable.
 
-## Map
+<a id="map"></a>
+
+## 🗺️ Map
 
 Map gives the selected reported position more screen space.
 
@@ -172,7 +182,7 @@ position from another frame. If no decoded position exists, it displays
 **No decoded beacon position**. The map uses OpenStreetMap tiles and needs
 Internet access to load them.
 
-### Copy or share a map link
+### 🔗 Copy or share a map link
 
 Long-press **any** of the three navigation buttons instead of tapping it.
 This opens the same action menu for that button's URL.
@@ -193,7 +203,9 @@ This opens the same action menu for that button's URL.
 For example, Geo produces a link such as `geo:43.560486,1.480804`.
 Link availability depends on the installed applications.
 
-## Detail
+<a id="detail"></a>
+
+## 🔎 Detail
 
 Detail opens the selected frame in an **external** COSPAS-SARSAT decoder.
 It is separate from the built-in decoded fields in Frames.
@@ -219,7 +231,9 @@ that service.
 Select another frame with the bottom arrows or in Frames to change the message.
 An external website failing to load does not mean local decoding failed.
 
-## Signal
+<a id="signal"></a>
+
+## 📈 Signal
 
 Signal is the engineering view for the selected message, useful when checking
 modulation, synchronization, or suspect bits.
@@ -243,7 +257,9 @@ Scroll down if a lower plot extends beyond the screen. SGB plots remain aligned
 while zooming and panning. A message without retained engineering trace data
 can show its summary without a graph.
 
-## Receiver
+<a id="receiver"></a>
+
+## 📻 Receiver
 
 Receiver controls tuning, generation/mode selection, and spectrum presentation.
 Its main controls fit beside the spectrum; scroll the page down for diagnostics.
@@ -271,7 +287,7 @@ Decoder settings are locked while a session is active. During playback with a
 validated profile, the displayed decoder configuration comes from that profile.
 Both generations may be disabled if you only want the spectrum and waterfall.
 
-### Receiver diagnostics
+### 🩺 Receiver diagnostics
 
 Swipe upward on the Receiver page to reveal the status and acquisition panels.
 
@@ -294,12 +310,14 @@ Clipped samples can indicate excessive input level. Full BW is an estimated
 integrated receiver-band power in RTL mode, not the height of a spectrum peak.
 WAV levels are relative and do not provide this RF power measurement.
 
-## Player
+<a id="player"></a>
+
+## ⏯️ Player
 
 Player replays captures at their original pace. During live RTL-SDR reception,
 the same screen provides recording controls.
 
-### Play a WAV
+### ▶️ Play a WAV
 
 <table>
 <tr>
@@ -328,7 +346,7 @@ into memory, so available device RAM matters.
 You can switch to Detection, Frames, Map, Detail, or Signal during playback.
 Received messages remain in the history after playback finishes.
 
-### Record live I/Q
+### ⏺️ Record live I/Q
 
 <table>
 <tr>
@@ -354,14 +372,16 @@ Received messages remain in the history after playback finishes.
   capture is not published as a successful recording.
 - Native I/Q recording is not available in the Windows browser interface.
 
-## Settings
+<a id="settings"></a>
+
+## ⚙️ Settings
 
 Scroll vertically to reach the three main groups: **Filtering**, **Audio**,
 and **RTL-SDR**. Each has its own confirmed reset action. Settings are saved
 locally and restored on the next launch, except for USB device selection.
 When editing a number, the app keeps the input above the on-screen keyboard.
 
-### Filtering and audio
+### 🔊 Filtering and audio
 
 <table>
 <tr>
@@ -384,7 +404,7 @@ screenshots to show system/test traffic and invalid frames.
 Filtering affects presentation, not RF acquisition. FGB FM audio is muted for
 the first two seconds of live acquisition while the frontend settles.
 
-### Countdown
+### ⏱️ Countdown
 
 <table>
 <tr>
@@ -404,7 +424,7 @@ Countdown and its beeps are enabled by default; auto-reload is off.
 See the [timer behavior](#understand-the-fgb-timer) above for count-up mode and
 long-press reset.
 
-### RTL-SDR: USB and gain
+### 🔌 RTL-SDR: USB and gain
 
 <table>
 <tr>
@@ -426,7 +446,7 @@ To calibrate the RF display, use a known source and enter its known level minus
 the displayed level. Without a reference measurement, treat dBm values as
 estimates. Raising calibration does not improve the received signal.
 
-### RTL-SDR: FGB
+### 📡 RTL-SDR: FGB
 
 <table>
 <tr>
@@ -455,7 +475,7 @@ These are advanced controls. Start with defaults and compare the same recording
 when testing a change. Raising allowed errors is not a substitute for a clean
 signal.
 
-### RTL-SDR: SGB
+### 🛰️ RTL-SDR: SGB
 
 <table>
 <tr>
@@ -485,7 +505,9 @@ signal.
 | Quality Check | Enabled |
 | Show invalid / over-limit SGB BCH | Disabled |
 
-## Restoring defaults
+<a id="restoring-defaults"></a>
+
+## ↩️ Restoring defaults
 
 Receiver, Filtering, Audio, and RTL-SDR have separate reset buttons.
 Always check the group named in the dialog before confirming.
@@ -503,7 +525,9 @@ Always check the group named in the dialog before confirming.
 </tr>
 </table>
 
-## Troubleshooting
+<a id="troubleshooting"></a>
+
+## 🩺 Troubleshooting
 
 | Observation | What to check |
 |---|---|

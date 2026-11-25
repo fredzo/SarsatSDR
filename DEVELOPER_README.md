@@ -1,4 +1,4 @@
-# SarsatSDR
+# 🛠️ SarsatSDR
 
 `sarsat-sdr` receives and decodes first-generation (FGB) and second-generation
 (SGB) COSPAS-SARSAT 406 MHz beacons.
@@ -7,7 +7,7 @@ A shared C++20 engine for Windows and Android, a React Native / Web interface,
 RTL-SDR USB acquisition, and WAV I/Q capture playback. The engine also runs
 from the command line without a graphical interface.
 
-## Features
+## ✨ Features
 
 - RTL-SDR reception at 921600 complex samples/s, supporting R820T/R820T2/R828D and
   RTL-SDR Blog V4, FE_AGC, and twelve gain presets. Bias-T is disabled.
@@ -73,7 +73,7 @@ from the command line without a graphical interface.
 - Real-time playback of the nine bundled captures; opening user WAV files
   on Android. Stereo I/Q PCM in 8-bit, 16-bit, and 32-bit floating-point formats.
 
-## Project layout
+## 🗂️ Project layout
 
 - `native/cospas-core`: portable engine, embedded DSP tables, and C API.
 - `native/sources`: WAV, RTL2832, R820 tuner, and USB transport.
@@ -86,7 +86,7 @@ from the command line without a graphical interface.
 - `spec`: FGB/SGB specifications.
 
 
-## Installing prerequisites on Windows
+## 🧰 Installing prerequisites on Windows
 
 This procedure starts from a clean Windows 10/11 x64 machine. Use **MSYS2 UCRT64** to build the Windows engine and **Windows Command Prompt (`cmd.exe`)** for Node.js, Android, and ADB. Clone the repository into a short path without accented characters, such as `C:\src\sarsat-sdr`.
 
@@ -94,7 +94,7 @@ For the PC version, follow steps 1 through 3 and, for RTL-SDR reception,
 step 6. Steps 4 and 5 are only needed to build the Android APK;
 installing an existing APK only requires Platform-Tools for ADB deployment.
 
-### 1. Git and long paths
+### 🔀 1. Git and long paths
 
 Install [Git for Windows](https://git-scm.com/download/win), then check in `cmd.exe`:
 
@@ -117,7 +117,7 @@ git clone https://github.com/fredzo/SarsatSDR.git sarsat-sdr
 cd /d C:\src\sarsat-sdr
 ```
 
-### 2. MSYS2 UCRT64, compiler, and native libraries
+### ⚙️ 2. MSYS2 UCRT64, compiler, and native libraries
 
 1. Install [MSYS2](https://www.msys2.org/) in `C:\msys64`.
 2. Open **MSYS2 UCRT64**, not the MSYS or MINGW64 terminal.
@@ -159,7 +159,7 @@ does not exist yet. Close and reopen terminals afterward.
 Do not use `setx PATH`: its 1024-character limit can truncate
 the existing `PATH`.
 
-### 3. Node.js and npm
+### 📦 3. Node.js and npm
 
 Install **Node.js 22 LTS, version 22.12 or later**, from [nodejs.org](https://nodejs.org/en/download). Node.js 24+ is also supported. Check:
 
@@ -168,7 +168,7 @@ node --version
 npm --version
 ```
 
-### 4. JDK 17
+### ☕ 4. JDK 17
 
 Only required to build the Android application.
 
@@ -187,7 +187,7 @@ javac -version
 
 Both commands must report Java 17.
 
-### 5. Android Studio, SDK, NDK, and Android CMake
+### 🤖 5. Android Studio, SDK, NDK, and Android CMake
 
 The SDK, NDK, and Android CMake are only needed to build the APK.
 Platform-Tools is sufficient to install an existing APK with ADB.
@@ -227,7 +227,7 @@ Behind a corporate TLS proxy, use the Windows certificate store if needed:
 setx JAVA_TOOL_OPTIONS "-Djavax.net.ssl.trustStoreType=Windows-ROOT"
 ```
 
-### 6. Windows RTL-SDR driver
+### 🔌 6. Windows RTL-SDR driver
 
 For live reception on Windows, **interface 0** of the RTL-SDR device
 must use **WinUSB**. If this driver is already installed and reception
@@ -247,7 +247,7 @@ for interface 0 may prevent TV use until the driver is restored.
 Zadig is not needed to build, play WAV files, or receive
 on Android: the application uses Android USB permission directly.
 
-## Building on Windows
+## 🔨 Building on Windows
 
 In **MSYS2 UCRT64**, at the repository root:
 
@@ -268,7 +268,7 @@ npm install
 npm run ui:build
 ```
 
-## Running the application on Windows
+## ▶️ Running the application on Windows
 
 Make sure `C:\msys64\ucrt64\bin` is in `PATH`, then run from the repository root in **cmd.exe**:
 
@@ -293,7 +293,7 @@ The bridge launches `build/cospas-cli.exe` and does not transport raw I/Q data. 
 
 If a DLL cannot be found, reopen the terminal and run `where.exe libfftw3f-3.dll` and `where.exe libusb-1.0.dll`.
 
-## Android application
+## 🤖 Android application
 
 `apps/mobile`: Expo / React Native, the **SarsatSDR** application,
 package `org.adrasec.f4jrx.sarsatsdr`, minSdk 26, arm64-v8a and x86_64.
@@ -309,9 +309,9 @@ The tuner waits 10 ms before each of the two PLL lock checks,
 particularly after disconnecting/reconnecting. Failure to lock remains an error.
 
 Prerequisites: JDK 17, Android SDK platform 37, NDK 27.1.12297006, and CMake 3.22.1.
-## Deploying the application to an Android device
+## 📲 Deploying the application to an Android device
 
-### 1. Preparing the tablet
+### 🔌 1. Preparing the tablet
 
 1. In **Settings > About tablet**, tap **Build number** seven times.
 2. Open **Developer options** and enable **USB debugging**.
@@ -326,7 +326,7 @@ adb devices -l
 
 The status must be `device`. If it is `unauthorized`, unlock the tablet and grant permission. If the device is missing, install the manufacturer's USB driver; the Google USB Driver is available in SDK Manager for Google devices.
 
-### 2. Building the release APK
+### 🔨 2. Building the release APK
 
 From `cmd.exe`, at the repository root:
 
@@ -344,7 +344,7 @@ The APK is generated at:
 apps\mobile\android\app\build\outputs\apk\release\app-release.apk
 ```
 
-### 3. Installing or updating the application
+### 📲 3. Installing or updating the application
 
 From `apps\mobile\android`:
 
@@ -381,9 +381,9 @@ The release APK currently uses the Expo debug key: configure a proper key
 before distribution. EAS `preview` and `production` profiles are provided;
 an EAS build without `--local` uploads the code to Expo servers.
 
-## Usage
+## 🧭 Usage
 
-### GitHub Actions: Android build and release
+### 🚀 GitHub Actions: Android build and release
 
 The **Build** workflow runs on pushes to `main`, pull requests, and
 manual triggers. It builds the C++ engine, checks WAV regressions
@@ -490,7 +490,7 @@ brings the corresponding row into the table's visible area.
 MAP uses the selected frame if it has a position,
 or the most recent frame containing a position.
 
-## Headless mode
+## 💻 Headless mode
 
 ```bat
 .\build\cospas-cli.exe --help
@@ -518,7 +518,7 @@ or `null` during WAV playback and when no measurable energy is present.
 `stop` followed by a newline, or closing the pipe, requests an orderly shutdown.
 `decode --events --realtime` paces WAV playback without changing its bits.
 
-## C API
+## 🧩 C API
 
 Contract: [c_api.h](native/cospas-core/include/cospas/c_api.h), target
 `cospas-c-api`. Check `cs_abi_version()` and initialize with `cs_config_init`.
@@ -548,7 +548,7 @@ from 1 to 10, applying to reception and playback, including with a validated pro
 On the command line: `--fgb-max-candidates N`.
 FFTW plans require plan creation and batch calls to be serialized.
 
-## Validation
+## ✅ Validation
 
 ```bat
 ctest --test-dir build --output-on-failure
