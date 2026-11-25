@@ -153,8 +153,9 @@ Each daily session holds up to **200 frames**. Dates throughout the app use
 timestamps use local time, with milliseconds; source-relative times are available in the details. New messages select
 automatically, and selecting a row updates Map, Detail, and Signal.
 
-The Mode column uses a compact **HDR n** badge when an FGB header has mismatched
-bits. The full header-error description remains available in the frame details.
+The Mode column uses a compact **Hn** badge when an FGB header has mismatched
+bits, where **n** is their count. Column spacing adapts to the pane width without
+shrinking the text. The full header-error description remains available in the frame details.
 
 An FGB short or orbitography frame may legitimately have no BCH-2 badge.
 A corrected frame is not automatically invalid. Conversely, a BCH failure

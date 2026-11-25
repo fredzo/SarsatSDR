@@ -15,7 +15,8 @@ import { beaconLocator, beaconPosition, geoUrl, googleMapsUrl, wazeUrl } from "@
 import { Spectrum } from "./Spectrum";
 import { BeaconMap } from "./BeaconMap";
 import { createTransport } from "./transport";
-import { fitExtraFields, formatFieldFrequencies, frameDetailType, frameSummary, headerStatus, receivedTime } from "./frame-summary";
+import { fitExtraFields, formatFieldFrequencies, frameBadgeFontSize, frameDetailType, frameSummary,
+  frameTableFontSize, frameTableHeaders, frameTableLayout, headerStatus, receivedTime } from "./frame-summary";
 import type { Transport } from "./transport-types";
 import { AcquisitionSpinner, type CountdownStart } from "./AcquisitionSpinner";
 import { frameNotification, isFrameFiltered, receptionPreferencesSchema } from "./reception-preferences";
@@ -397,24 +398,25 @@ function Signal({ entry }: { entry: Entry | undefined }) {
     </View>;
 }
 const frameRowHeight = 62;
-const frameTableHeaders = ["Received", "Gen.", "Type", "Mode", "MHz", "Locator", "BCH"];
-const FrameRow = memo(function FrameRow({ entry, index, locator, widths, selected, compact, select }: {
-  entry: Entry; index: number; locator: string; widths: number[]; selected: boolean; compact: boolean; select: (id: number) => void;
+const FrameRow = memo(function FrameRow({ entry, index, locator, widths, padding, selected, compact, select }: {
+  entry: Entry; index: number; locator: string; widths: number[]; padding: number;
+  selected: boolean; compact: boolean; select: (id: number) => void;
 }) {
+  const cell = { paddingHorizontal: padding };
   return <Pressable accessibilityRole="button" accessibilityLabel={`Select frame ${index + 1}`}
     accessibilityHint={`Mode: ${modeLabel(entry.frame.mode)}`} accessibilityState={{ selected }} onPress={() => select(entry.id)}
     style={[s.tr, { height: frameRowHeight }, selected && { backgroundColor: "#004444" }]}>
-    <Text style={[s.td, s.mono, { width: widths[0] }]}>
+    <Text style={[s.td, s.mono, cell, { width: widths[0] }]}>
       {receivedTime(entry.received).replace(" ", "\n")}
     </Text>
-    <Text style={[s.td, s.mono, { width: widths[1] }]}>{entry.frame.generation === 1 ? "FGB" : "SGB"}</Text>
-    <Text numberOfLines={2} style={[s.td, s.mono, { width: widths[2] }]}>{entry.frame.beaconType}</Text>
-    <View style={[s.tableBadges, { width: widths[3] }]}>
+    <Text style={[s.td, s.mono, cell, { width: widths[1] }]}>{entry.frame.generation === 1 ? "FGB" : "SGB"}</Text>
+    <Text numberOfLines={2} style={[s.td, s.mono, cell, { width: widths[2] }]}>{entry.frame.beaconType}</Text>
+    <View style={[s.tableBadges, cell, { width: widths[3] }]}>
       <View style={s.tableModeIcon}><ModeIcon mode={entry.frame.mode} /></View>{!compact && headerBadge(entry.frame, true)}
     </View>
-    <Text style={[s.td, s.mono, { width: widths[4] }]}>{frameMhz(entry)}</Text>
-    <Text style={[s.td, s.mono, { width: widths[5] }]}>{locator}</Text>
-    <View style={[s.tableBadges, { width: widths[6] }]}>{bchBadges(entry.frame, true)}</View>
+    <Text style={[s.td, s.mono, cell, { width: widths[4] }]}>{frameMhz(entry)}</Text>
+    <Text style={[s.td, s.mono, cell, { width: widths[5] }]}>{locator}</Text>
+    <View style={[s.tableBadges, cell, { width: widths[6] }]}>{bchBadges(entry.frame, true)}</View>
   </Pressable>;
 });
 const FrameTable = memo(function FrameTable({ entries, active, select, glyphWidth, compact = false, filtered = false }: {
@@ -422,6 +424,7 @@ const FrameTable = memo(function FrameTable({ entries, active, select, glyphWidt
   glyphWidth: number | null;
 }) {
   const rows = useRef<FlatList<{ entry: Entry; locator: string; index: number }>>(null);
+  const [tableWidth, setTableWidth] = useState(0);
   const viewport = useRef({ y: 0, height: 0 });
   const revealSelection = () => {
     const index = entries.findIndex(entry => entry.id === active?.id);
@@ -441,22 +444,19 @@ const FrameTable = memo(function FrameTable({ entries, active, select, glyphWidt
     if (!compact) values[3] = headerStatus(entry.frame, true)?.text ?? "";
     return { entry, index, locator, values, bch: entry.frame.bch.map((_, n) => bchStatus(entry.frame, n, true).text) };
   }).reverse(), [entries, compact]);
-  const widths = useMemo(() => frameTableHeaders.map((header, n) => {
-    if (glyphWidth === null) return 0;
-    const values = n === frameTableHeaders.length - 1 ? tableRows.flatMap(row => row.bch) : tableRows.map(row => row.values[n]);
-    const badgePadding = n === frameTableHeaders.length - 1 || (!compact && n === 3 && entries.some(entry => entry.frame.headerErrors)) ? 12 : 0;
-    return Math.ceil(Math.max(header.length, ...values.map(value => value.length)) * glyphWidth + 18 + badgePadding);
-  }), [tableRows, glyphWidth, compact]);
+  const layout = useMemo(() => glyphWidth === null || tableWidth === 0 ? null
+    : frameTableLayout(tableRows, glyphWidth, tableWidth), [tableRows, glyphWidth, tableWidth]);
   const renderRow = useCallback(({ item }: { item: { entry: Entry; locator: string; index: number } }) =>
-    <FrameRow {...item} widths={widths} selected={active?.id === item.entry.id} compact={compact} select={select} />,
-  [widths, active?.id, compact, select]);
-  return <View style={s.fill} accessibilityLabel="Received frames">
+    layout && <FrameRow {...item} widths={layout.widths} padding={layout.padding}
+      selected={active?.id === item.entry.id} compact={compact} select={select} />,
+  [layout, active?.id, compact, select]);
+  return <View style={s.fill} accessibilityLabel="Received frames" onLayout={event => setTableWidth(event.nativeEvent.layout.width)}>
     {!entries.length ? <View style={s.emptyPane}><Text style={s.emptyStrong}>{filtered ? "All frames are filtered" : "No frames received"}</Text>
       <Text style={s.empty}>{filtered ? "Change display filters in Settings to show stored frames." : "Start the receiver or play an I/Q capture."}</Text></View> :
-      glyphWidth !== null && <ScrollView horizontal style={s.fill} contentContainerStyle={{ minWidth: "100%" }}>
-        <View style={{ minWidth: "100%", width: widths.reduce((a, b) => a + b, 0), flex: 1 }}>
+      layout && <ScrollView horizontal style={s.fill} contentContainerStyle={{ minWidth: "100%" }}>
+        <View style={{ minWidth: "100%", width: layout.widths.reduce((a, b) => a + b, 0), flex: 1 }}>
           <View style={[s.tr, s.th]}>{frameTableHeaders.map((name, n) =>
-            <Text key={name} style={[s.thText, s.mono, { width: widths[n] }]}>{name}</Text>)}</View>
+            <Text key={name} style={[s.thText, s.mono, { width: layout.widths[n], paddingHorizontal: layout.padding }]}>{name}</Text>)}</View>
           <FlatList ref={rows} data={tableRows} renderItem={renderRow} keyExtractor={item => String(item.entry.id)}
             extraData={active?.id} style={s.fill} nestedScrollEnabled accessibilityLabel="Frame rows"
             initialNumToRender={8} maxToRenderPerBatch={8} windowSize={3}
@@ -1411,16 +1411,16 @@ const s = StyleSheet.create({
   emptyStrong: { fontSize: 18, color: "#00ffff" },
   tr: { flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#003333" },
   th: { backgroundColor: "#003333", borderBottomColor: "#335555" },
-  thText: { color: "#99baba", fontSize: 11, paddingVertical: 11, paddingHorizontal: 9 },
-  td: { fontSize: 11, paddingVertical: 10, paddingHorizontal: 9, color: "#ffffff" },
-  tableMeasure: { position: "absolute", opacity: 0, fontFamily: mono, fontSize: 11 },
+  thText: { color: "#99baba", fontSize: frameTableFontSize, paddingVertical: 11, paddingHorizontal: 9 },
+  td: { fontSize: frameTableFontSize, paddingVertical: 10, paddingHorizontal: 9, color: "#ffffff" },
+  tableMeasure: { position: "absolute", opacity: 0, fontFamily: mono, fontSize: frameTableFontSize },
   tableBadges: { alignItems: "flex-start", gap: 2, paddingHorizontal: 9 },
   tableModeIcon: { paddingVertical: 10 },
   cell: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", paddingHorizontal: 4 },
   link: { color: "#00ffff", textDecorationLine: "underline" },
   mono: { fontFamily: mono },
   badges: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginVertical: 4 },
-  badge: { borderWidth: 1, paddingVertical: 2, paddingHorizontal: 5, borderRadius: 2, fontFamily: mono, fontSize: 10, overflow: "hidden" },
+  badge: { borderWidth: 1, paddingVertical: 2, paddingHorizontal: 5, borderRadius: 2, fontFamily: mono, fontSize: frameBadgeFontSize, overflow: "hidden" },
   valid: { color: "#00ff00", backgroundColor: "#003000", borderColor: "#00885f" },
   invalid: { color: "#ff8484", backgroundColor: "#330f0f", borderColor: "#883333" },
   corrected: { color: "#ffdd66", backgroundColor: "#332600", borderColor: "#998500" },

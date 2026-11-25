@@ -1,6 +1,23 @@
 import { beaconLocator, beaconPosition } from "@sarsat/shared/beacon-position";
 import type { Frame } from "@sarsat/shared/protocol";
 
+export const frameTableHeaders = ["Received", "Gen.", "Type", "Mode", "MHz", "Locator", "BCH"] as const;
+export const frameTableFontSize = 11;
+export const frameBadgeFontSize = 10;
+
+export function frameTableLayout(rows: { values: string[]; bch: string[] }[], glyphWidth: number, availableWidth: number) {
+  const contentWidths = frameTableHeaders.map((header, n) => {
+    const values = n === 6 ? rows.flatMap(row => row.bch) : rows.map(row => row.values[n]);
+    const length = Math.max(0, ...values.map(value => value.length));
+    const badge = n === 3 || n === 6;
+    const valueWidth = badge && length ? length * glyphWidth * frameBadgeFontSize / frameTableFontSize + 12 : length * glyphWidth;
+    return Math.ceil(Math.max(header.length * glyphWidth, valueWidth, n === 3 ? 16 : 0));
+  });
+  const contentWidth = contentWidths.reduce((sum, width) => sum + width, 0);
+  const padding = Math.max(4, Math.min(9, Math.floor((availableWidth - contentWidth) / (2 * contentWidths.length))));
+  return { widths: contentWidths.map(width => width + 2 * padding), padding };
+}
+
 export function receivedTime(received: string) {
   const date = new Date(received);
   if (!Number.isFinite(date.getTime())) throw new RangeError(`Invalid reception timestamp: ${received}`);
@@ -10,7 +27,7 @@ export function receivedTime(received: string) {
 export function headerStatus(frame: Frame, compact = false) {
   if (frame.generation !== 1 || !frame.headerErrors) return null;
   const description = `HEADER ${frame.headerErrors} bit${frame.headerErrors > 1 ? "s" : ""} mismatch`;
-  return { text: compact ? `HDR ${frame.headerErrors}` : description, accessibilityLabel: description, tone: "corrected" } as const;
+  return { text: compact ? `H${frame.headerErrors}` : description, accessibilityLabel: description, tone: "corrected" } as const;
 }
 
 export function formatFieldFrequencies(value: string) {

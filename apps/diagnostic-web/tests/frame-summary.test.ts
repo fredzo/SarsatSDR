@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Frame } from "@sarsat/shared/protocol";
 import { beaconLocator, geoUrl } from "@sarsat/shared/beacon-position";
-import { fitExtraFields, formatFieldFrequencies, frameDetailType, frameSummary, headerStatus, receivedTime } from "../../mobile/src/frame-summary";
+import { fitExtraFields, formatFieldFrequencies, frameDetailType, frameSummary, frameTableLayout, headerStatus, receivedTime } from "../../mobile/src/frame-summary";
 
 const frame = (generation: 1 | 2, fields: NonNullable<Frame["fields"]>): Frame => ({
   generation, mode: "normal", timeSeconds: 0, frequencyOffsetHz: 0, beaconType: generation === 1 ? "EPIRB" : "ELT",
@@ -109,13 +109,31 @@ test("Table header mismatch badges stay compact while preserving the full access
   for (const errors of [1, 3]) {
     const value = { ...frame(1, []), headerErrors: errors };
     const compact = headerStatus(value, true)!;
-    assert.equal(compact.text, `HDR ${errors}`);
-    assert.ok(compact.text.length <= 5, "Mode must not reserve space for the full mismatch sentence");
+    assert.equal(compact.text, `H${errors}`);
+    assert.ok(compact.text.length <= 2, "Mode must not reserve space for the full mismatch sentence");
     assert.equal(compact.accessibilityLabel, `HEADER ${errors} bit${errors > 1 ? "s" : ""} mismatch`);
     assert.equal(headerStatus(value)?.text, compact.accessibilityLabel);
   }
   assert.equal(headerStatus({ ...frame(1, []), headerErrors: 0 }, true), null);
   assert.equal(headerStatus({ ...frame(2, []), headerErrors: 3 }, true), null);
+});
+
+test("Tablet frame columns fit the pane with header errors and corrected BCH badges without widening Mode", () => {
+  const rows = [{
+    values: ["00:00:00.000", "SGB", "SYSTM", "H3", "406.051", "JN03rn74"],
+    bch: ["BCH1 corr. 3", "BCH2 corr. 2"],
+  }];
+  for (const [glyphWidth, paneWidth] of [[6.6, 460], [7.2, 460], [8, 510]]) {
+    const { widths, padding } = frameTableLayout(rows, glyphWidth, paneWidth);
+    assert.ok(widths.reduce((sum, width) => sum + width, 0) <= paneWidth, "No horizontal overflow on the tablet");
+    assert.equal(widths[3], widths[1], "Mode stays as narrow as its four-character heading");
+    assert.ok(widths[0] >= 11 * glyphWidth + 2 * padding, "Do not truncate reception time");
+    assert.ok(widths[6] >= 12 * glyphWidth * 10 / 11 + 12 + 2 * padding, "Keep correction counts fully visible");
+  }
+  const wide = frameTableLayout(rows, 7.2, 800);
+  assert.equal(wide.padding, 9, "Keep existing spacing when there is room");
+  const narrow = frameTableLayout(rows, 7.2, 250);
+  assert.ok(narrow.widths.reduce((sum, width) => sum + width, 0) > 250, "Keep scrolling on genuinely narrow screens rather than clipping cells");
 });
 
 test("Reception timestamps use local European dates and three millisecond digits", () => {
