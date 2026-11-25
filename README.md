@@ -49,8 +49,9 @@ see the [detailed application guide](docs/README.md).
 
 - An Android device running **Android 8.0 or later**, with USB host/OTG support.
   The interface is designed for tablets in landscape orientation.
-- A compatible **RTL-SDR USB receiver**: R820T, R820T2, R828D, or RTL-SDR Blog V4.
+- A compatible **[RTL-SDR USB receiver](https://www.aliexpress.com/item/1005009176860935.html)**: R820T, R820T2, R828D, or RTL-SDR Blog V4.
 - A suitable antenna for **406 MHz** and a USB OTG adapter or cable if needed.
+- *Optional:* The RTL-SDR dongle tends to draw a significant amount of power from the tablet. A [USB splitter](https://www.aliexpress.com/item/1005008284832946.html) can be used to power the tablet while keeping the dongle connected.
 
 Android builds support `arm64-v8a` and `x86_64`. Live I/Q recording requires
 **Android 10 or later**.
@@ -70,8 +71,10 @@ Map tiles and external services require Internet access.
 
 1. Check [GitHub Releases](https://github.com/fredzo/SarsatSDR/releases) for
    available APKs and download the one you want to install.
-2. Open the APK on your device. If Android asks, allow installation from the
-   browser or file manager you used.
+2. Open the APK on your device. Android requires permission to **install apps
+   from external sources** for the browser or file manager opening the APK.
+   Follow the [illustrated permission guide](docs/ANDROID_INSTALL.md), then
+   return to the APK and tap **Install**.
 3. Launch **SarsatSDR** and use the device in landscape orientation.
 
 Current APKs use a debug signing key and are intended for testing.
