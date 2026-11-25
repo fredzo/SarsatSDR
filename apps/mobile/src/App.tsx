@@ -1063,7 +1063,15 @@ export default function App() {
       <View style={s.dashboardColumn}>
         <View style={s.dashboardTop} accessibilityLabel="Detection spectrum">{spectrum(true)}</View>
         <View style={s.dashboardBottom}>
-          <Text style={[s.h3, { marginBottom: 0, padding: 8 }]}>FRAMES ({frameCount})</Text>
+          <View style={[s.row, { padding: 8, flexWrap: "nowrap" }]}>
+            <Text style={[s.h3, { marginBottom: 0 }]}>FRAMES ({frameCount})</Text>
+            {pastSession && <View style={[s.row, { gap: 4, flexWrap: "nowrap" }]}>
+              <FolderClock size={12} color="#99baba" />
+              <Text numberOfLines={1} style={[s.h3, { marginBottom: 0, color: "#99baba", letterSpacing: 0 }]}>
+                {formatSessionDate(storedSession.date)}
+              </Text>
+            </View>}
+          </View>
           <FrameTable entries={visibleEntries} active={activeFrame} select={setSelected} glyphWidth={glyphWidth} filtered={entries.length > 0} compact />
         </View>
       </View>

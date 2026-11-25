@@ -193,7 +193,7 @@ Complete decoded data and signal traces are retained.
   session. Starting again on the same day appends to it, retaining its latest
   200 frames across stops and app restarts.
 - A loaded historical day is identified by a small folder-clock icon and its
-  date in the Frames header. Frame selection also updates Map, Detail, and Signal.
+  date in the Frames header and beside FRAMES on Detection. Frame selection also updates Map, Detail, and Signal.
   Clear frames is disabled for historical days.
 - Starting reception or playback automatically returns to today's session.
   Deleting the loaded session returns to today's history; deleting another
