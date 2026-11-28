@@ -19,12 +19,13 @@
  */
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
-import { Animated, Easing, FlatList, Keyboard, KeyboardAvoidingView, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
+import { Animated, Easing, FlatList, Keyboard, KeyboardAvoidingView, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, useWindowDimensions, View, type StyleProp,
   type TextStyle, type ViewStyle } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import Slider from "@react-native-community/slider";
 import * as Clipboard from "expo-clipboard";
-import Svg, { G, Path, Polyline, Text as SvgText } from "react-native-svg";
+import Svg, { G, Path, Polyline, SvgXml, Text as SvgText } from "react-native-svg";
+import qrcode from "qrcode-generator";
 import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileSearch, FileText, FlaskConical, FolderClock, FolderOpen, Globe, MapPin,
   Navigation, Play, BoomBox, Radio, RadioTower, RefreshCw, Settings as SettingsIcon, Square, Usb, type LucideIcon,
   ArrowBigRight,
@@ -49,6 +50,10 @@ import { FrameSessions, formatSessionDate, localSessionDate, sessionExport, type
 import { createSessionStorage, saveJson } from "./session-storage";
 import { playbackProgress } from "./playback-progress";
 import appConfig from "../app.json";
+
+qrcode.stringToBytes = value => Array.from(
+  encodeURIComponent(value).replace(/%([0-9A-F]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16))),
+  byte => byte.charCodeAt(0));
 
 type Action = { label: string; icon: LucideIcon; run: () => void; kind?: "stop" };
 function AboutPopup({ close }: { close: () => void }) {
@@ -81,17 +86,48 @@ function AboutPopup({ close }: { close: () => void }) {
     </View>
   </Modal>;
 }
-function ActionPopup({ title, actions, close }: { title: string; actions: Action[]; close: () => void }) {
+function QrCode({ value, size }: { value: string; size: number }) {
+  const xml = useMemo(() => {
+    const code = qrcode(0, "M");
+    code.addData(value);
+    code.make();
+    return code.createSvgTag({ cellSize: 4, margin: 16, scalable: true });
+  }, [value]);
+  return <View accessibilityRole="image" accessibilityLabel={`QR code: ${value}`}>
+    <SvgXml xml={xml} width={size} height={size} />
+  </View>;
+}
+function ActionPopup({ title, actions, close, qrValues }: {
+  title: string; actions: Action[]; close: () => void; qrValues?: string[];
+}) {
+  const [qrIndex, setQrIndex] = useState(0);
+  const { width } = useWindowDimensions();
+  const qrSize = Math.min(180, width * .32);
   return <Modal transparent animationType="fade" onRequestClose={close}>
     <View style={s.popupBackdrop}>
       <Pressable style={StyleSheet.absoluteFill} onPress={close} accessible={false} />
-      <View style={s.popup} accessibilityViewIsModal>
+      <View style={[s.popup, qrValues && { width: qrValues.length > 1 ? 600 : 380 }]} accessibilityViewIsModal>
         <View style={s.popupHeader}><Text style={s.h3}>{title}</Text>
           <Pressable accessibilityRole="button" accessibilityLabel="Close popup" onPress={close} hitSlop={8}>
             <X size={20} color="#fff" />
           </Pressable>
         </View>
-        {actions.map(({ label, icon, run, kind }) => <Button key={label} title={label} icon={icon} kind={kind} onPress={() => { close(); run(); }} />)}
+        <View style={qrValues && [s.qrPopupContent, qrValues.length > 1 && { gap: 4 }]}>
+          <View style={[{ gap: 8 }, qrValues && { flex: 1, minWidth: 0 }]}>
+            {actions.map(({ label, icon, run, kind }, index) => <View key={label} style={s.qrActionRow}>
+              <Button title={label} icon={icon} kind={kind} style={{ flex: 1 }}
+                onPress={() => { close(); run(); }} />
+              {qrValues && qrValues.length > 1 && <Pressable accessibilityRole="radio"
+                accessibilityLabel={`QR code: ${label}`} aria-checked={qrIndex === index}
+                onPress={() => setQrIndex(index)} style={s.qrRadio}>
+                <View style={[s.box, { borderRadius: 10, alignItems: "center", justifyContent: "center" }]}>
+                  {qrIndex === index && <View style={s.qrRadioDot} />}
+                </View>
+              </Pressable>}
+            </View>)}
+          </View>
+          {qrValues && <QrCode value={qrValues[qrIndex]} size={qrSize} />}
+        </View>
       </View>
     </View>
   </Modal>;
@@ -613,6 +649,7 @@ function CompactFrameDetails({ entry }: { entry: Entry }) {
         </View>
         {copyError !== "" && <Text accessibilityRole="alert" style={s.errorText}>{copyError}</Text>}
         {copyOpen && summary.position && <ActionPopup title="Copy coordinates" close={() => setCopyOpen(false)}
+          qrValues={[summary.position.decimal, summary.position.dms, ...(summary.position.locator ? [summary.position.locator] : [])]}
           actions={[summary.position.decimal, summary.position.dms, ...(summary.position.locator ? [summary.position.locator] : [])]
             .map(value => ({ label: value, icon: Copy, run: () => { void copyText(value).catch(reason => setCopyError(String(reason))); } }))} />}
         {!!summary.emergency.length && <Text style={s.summaryLine}><Text style={[s.summaryLabel, s.emergencyLabel]}>Emergency: </Text>{formatFieldFrequencies(summary.emergency.join(" · "))}</Text>}
@@ -726,7 +763,7 @@ const MapPanel = memo(function MapPanel({ entry, compact = false }: { entry: Ent
       </Text>}
     </View>
     {linkError !== "" && <Text accessibilityRole="alert" style={s.errorText}>{linkError}</Text>}
-    {link && <ActionPopup title={link.name} close={() => setLink(null)} actions={[
+    {link && <ActionPopup title={link.name} close={() => setLink(null)} qrValues={[link.url]} actions={[
       { label: "Copy URL", icon: Copy, run: () => { void copyText(link.url).catch(report); } },
       { label: "Share URL", icon: Share2, run: () => { void shareLink(link.name, link.url).catch(report); } },
     ]} />}
@@ -1464,6 +1501,10 @@ const s = StyleSheet.create({
   popup: { minWidth: 250, maxWidth: "90%", gap: 8, padding: 16, borderRadius: 10, borderWidth: 1,
     borderColor: "#335555", backgroundColor: "#002222" },
   popupHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 16 },
+  qrPopupContent: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 16 },
+  qrActionRow: { flexDirection: "row", alignItems: "center" },
+  qrRadio: { width: 44, minHeight: 44, marginLeft: 24, alignItems: "center", justifyContent: "center" },
+  qrRadioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#3fe6e6" },
   main: { flex: 1, backgroundColor: "#001000" },
   titlebar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#002222", minHeight: 58, paddingVertical: 5, paddingHorizontal: 20 },
   brand: { flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "center", flexShrink: 1 },
@@ -1523,7 +1564,7 @@ const s = StyleSheet.create({
   navArrow: { minWidth: 48, minHeight: 48, alignItems: "center", justifyContent: "center" },
   row: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 10 },
   button: { flexDirection: "row", gap: 8, borderWidth: 1, borderColor: "#335555", borderRadius: 12, paddingVertical: 10, paddingHorizontal: 16, backgroundColor: "#003333", minHeight: 48, justifyContent: "center", alignItems: "center" },
-  buttonText: { color: "#ffffff", fontSize: 13 },
+  buttonText: { color: "#ffffff", fontSize: 13, flexShrink: 1 },
   iconButton: { width: 48, height: 48, minHeight: 48, borderRadius: 8, paddingHorizontal: 0, paddingVertical: 0 },
   primary: { backgroundColor: "#00885f", borderColor: "#00885f" },
   check: { flexDirection: "row", alignItems: "center", gap: 7, minHeight: 40 },

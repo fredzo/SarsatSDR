@@ -75,7 +75,7 @@ messages, selected frame, and map visible together.
 <li><strong>Spectrum and detection indicators.</strong> Frequency runs horizontally; level runs vertically. FGB candidate markers show acquisition attempts, not confirmed decodes. The FGB/SGB indicators report new detections.</li>
 <li><strong>Waterfall.</strong> The newest signal history appears at the top and moves down. Brighter colors indicate stronger levels relative to the selected display settings.</li>
 <li><strong>Received frames.</strong> Tap a row to select it. The highlight identifies the active message. The list includes generation, type, mode, frequency, locator when available, and BCH status.</li>
-<li><strong>Current frame.</strong> The compact summary includes beacon identification, mode, country, reported position, and error-correction status. When a position exists, the copy button offers decimal coordinates, degrees/minutes/seconds, and locator.</li>
+<li><strong>Current frame.</strong> The compact summary includes beacon identification, mode, country, reported position, and error-correction status. When a position exists, the copy button opens the <a href="#copy-coordinates">coordinate copy/QR popup</a> with decimal, degrees/minutes/seconds, and locator formats.</li>
 <li><strong>Map.</strong> Shows the selected message's position, or the most recent available position when the selection has none. Navigation buttons sit on its right edge.</li>
 <li><strong>Bottom navigation.</strong> Switch tabs without stopping acquisition. Arrows beside Frames select the previous/next visible message; Frames (x/y) gives the selected position within the visible list.</li>
 </ol>
@@ -86,6 +86,32 @@ messages, selected frame, and map visible together.
 Each new unfiltered frame becomes the active selection. When filters hide some
 messages, the frame-list heading can display visible/total counts.
 Filtering does not delete stored messages.
+
+<a id="copy-coordinates"></a>
+
+### 📲 Copy coordinates or scan a QR code
+
+Tap the **copy icon** beside the reported position in Detection's current-frame
+summary. The popup lets you copy coordinates locally or transfer them to another
+device by scanning the QR code.
+
+<table>
+<tr>
+<td width="60%" valign="top"><a href="images/coordinates-actions-guide.png"><img src="images/coordinates-actions-guide.png" alt="Coordinate popup with three copy buttons, three aligned radio buttons grouped next to the QR code, decimal selected, and four numbered controls" width="100%"></a></td>
+<td valign="top">
+<ol>
+<li><strong>Copy a format.</strong> The three buttons copy decimal coordinates, degrees/minutes/seconds, or the Maidenhead locator, then close the popup. Each copies its own displayed text, independently of the QR selection.</li>
+<li><strong>Choose the QR format.</strong> The radio buttons sit closer to the QR code, with extra space separating them from the copy buttons. Each stays aligned with its corresponding format. Selecting one updates only the QR code, without copying or closing the popup. Decimal is selected whenever the popup opens.</li>
+<li><strong>Scan coordinates.</strong> The QR code contains the exact text of the selected format. Point another device's camera or QR reader at it to retrieve that text.</li>
+<li><strong>Close.</strong> Dismisses the popup without copying coordinates.</li>
+</ol>
+</td>
+</tr>
+</table>
+
+Coordinate QR codes contain text, not a navigation link. To transfer a link that
+opens a map application, use the [map-link popup](#copy-or-share-a-map-link) below.
+QR codes are generated locally, without Internet access.
 
 ### 🌊 Watch the waterfall
 
@@ -235,26 +261,32 @@ position from another frame. If no decoded position exists, it displays
 **No decoded beacon position**. The map uses OpenStreetMap tiles and needs
 Internet access to load them.
 
+<a id="copy-or-share-a-map-link"></a>
+
 ### 🔗 Copy or share a map link
 
 Long-press **any** of the three navigation buttons instead of tapping it.
 This opens the same action menu for that button's URL.
+The QR code to the right of Copy URL and Share URL contains that exact link,
+ready to scan on another device. QR codes are generated locally and need no Internet access.
 
 <table>
 <tr>
-<td width="60%" valign="top"><a href="images/map-actions-guide.png"><img src="images/map-actions-guide.png" alt="Geo long-press menu with three numbered controls" width="100%"></a></td>
+<td width="60%" valign="top"><a href="images/map-actions-guide.png"><img src="images/map-actions-guide.png" alt="Geo long-press popup with Copy URL and Share URL on the left, its QR code on the right, and four numbered controls" width="100%"></a></td>
 <td valign="top">
 <ol>
 <li><strong>Copy URL.</strong> Copies the selected navigation link to the clipboard.</li>
 <li><strong>Share URL.</strong> Opens Android sharing for that link.</li>
 <li><strong>Close.</strong> Dismisses the menu without opening or sharing the link.</li>
+<li><strong>Scan the link.</strong> The QR code contains the same URL as Copy URL and Share URL. Scan it on another device to retrieve or open that navigation link. It also works for the Google Maps and Waze buttons.</li>
 </ol>
 </td>
 </tr>
 </table>
 
-For example, Geo produces a link such as `geo:43.560486,1.480804`.
-Link availability depends on the installed applications.
+For example, the screenshot's Geo QR code contains `geo:43.603333,1.457778`.
+Link availability depends on the installed applications. Opening a scanned web
+link may still require Internet access.
 
 <a id="detail"></a>
 
@@ -440,7 +472,7 @@ The single-line **Version** strip at the top of Settings, before Filtering,
 shows the installed application version. Include it when reporting a problem
 or comparing builds. On the right, the **circled question-mark** button opens About SarsatSDR, with author credits,
 links to this detailed guide and the full license, and the warranty and liability
-disclaimer. **Support the project**, marked with a coffee-cup icon, opens Frédéric BORRY's PayPal page in your
+disclaimer. **Support the project**, marked with a coffee-cup icon, opens F4JRX's PayPal page in your
 browser; supporting the project is optional and the application is free to use.
 
 ![The single-line Version strip at the beginning of Settings](images/settings-version.png)
