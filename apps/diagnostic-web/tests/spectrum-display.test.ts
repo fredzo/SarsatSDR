@@ -1,7 +1,37 @@
+/*
+ * SarsatSDR
+ * Copyright (C) 2026 Frederic BORRY - F4JRX
+ * Authors: Frederic BORRY - F4JRX and Copilot (AI-assisted development).
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { averageSpectrum, persistSpectrum, fftMaxDb, fftOrdinate, WaterfallBuffer, waterfallBins, waterfallRows } from "@sarsat/shared/spectrum-display";
+import { averageSpectrum, persistSpectrum, detectionSegments, fftMaxDb, fftOrdinate, WaterfallBuffer, waterfallBins, waterfallRows } from "@sarsat/shared/spectrum-display";
 import { nativeEventSchema, type SpectrumEvent } from "@sarsat/shared/protocol";
+
+test("FGB meter fills proportionally to the candidate limit and saturates at ten LEDs", () => {
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6].map(count => detectionSegments(count, 5)), [0, 2, 4, 6, 8, 10, 10]);
+  for (let maximum = 1; maximum <= 10; maximum++) {
+    assert.equal(detectionSegments(maximum, maximum), 10);
+    assert.equal(detectionSegments(0, maximum), 0);
+    assert.equal(detectionSegments(1, maximum), Math.ceil(10 / maximum));
+  }
+  assert.equal(detectionSegments(3, 10), 3, "SGB keeps its one-LED-per-detection scale");
+});
 
 test("Waterfall interpolates fractional levels instead of snapping to seven colors", () => {
   const buffer = new WaterfallBuffer();

@@ -1,3 +1,23 @@
+/*
+ * SarsatSDR
+ * Copyright (C) 2026 Frederic BORRY - F4JRX
+ * Authors: Frederic BORRY - F4JRX and Copilot (AI-assisted development).
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #include <cospas/c_api.h>
 
 #include <math.h>
@@ -27,7 +47,24 @@ int main(void) {
     CHECK(cs_config_init(&config, sizeof(config) - 1, &error) == CS_INVALID_ARGUMENT);
     CHECK(error.code == CS_INVALID_ARGUMENT && error.message[0]);
     CHECK(cs_config_init(&config, sizeof(config), &error) == CS_OK);
-    CHECK(config.fgb_max_candidates == 4);
+    CHECK(config.fgb_max_candidates == 5);
+    config.fgb_excluded_band_count = 7;
+    CHECK(cs_decode_iq(&config, CS_IQ_CF32, 230400, NULL, 0, &result, &error) == CS_INVALID_ARGUMENT);
+    config.fgb_excluded_band_count = 1;
+    config.fgb_excluded_bands[0].offset_hz = 11000;
+    config.fgb_excluded_bands[0].deviation_hz = 0;
+    CHECK(cs_decode_iq(&config, CS_IQ_CF32, 230400, NULL, 0, &result, &error) == CS_INVALID_ARGUMENT);
+    config.fgb_excluded_bands[0].deviation_hz = NAN;
+    CHECK(cs_decode_iq(&config, CS_IQ_CF32, 230400, NULL, 0, &result, &error) == CS_INVALID_ARGUMENT);
+    config.fgb_excluded_bands[0].offset_hz = NAN;
+    config.fgb_excluded_bands[0].deviation_hz = 2000;
+    CHECK(cs_decode_iq(&config, CS_IQ_CF32, 230400, NULL, 0, &result, &error) == CS_INVALID_ARGUMENT);
+    CHECK(cs_config_init(&config, offsetof(cs_config, fgb_excluded_band_count), &error) == CS_OK);
+    CHECK(config.fgb_max_candidates == 5 && config.fgb_excluded_band_count == 1);
+    CHECK(cs_decode_iq(&config, CS_IQ_CF32, 230400, NULL, 0, &result, &error) == CS_OK);
+    cs_result_destroy(result);
+    result = NULL;
+    CHECK(cs_config_init(&config, sizeof(config), &error) == CS_OK);
     for (n = 0; n < 2; ++n) {
         config.fgb_max_candidates = n ? 11 : 0;
         CHECK(cs_decode_iq(&config, CS_IQ_CF32, 230400, NULL, 0, &result, &error) == CS_INVALID_ARGUMENT);

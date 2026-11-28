@@ -1,6 +1,30 @@
+/*
+ * SarsatSDR
+ * Copyright (C) 2026 Frederic BORRY - F4JRX
+ * Authors: Frederic BORRY - F4JRX and Copilot (AI-assisted development).
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import { z } from "zod";
 
 const finite = z.number().finite();
+export const fgbFrequencyBandSchema = z.object({
+  offsetHz: finite.min(-1e9).max(1e9),
+  deviationHz: finite.positive().max(1e6),
+});
 const settingsFields = z.object({
   fgb: z.boolean(), sgb: z.boolean(), normalPrn: z.boolean(), testPrn: z.boolean(),
   fgbNormal: z.boolean().default(true), fgbSelfTest: z.boolean().default(true),
@@ -8,7 +32,8 @@ const settingsFields = z.object({
   fgbAlpha: finite.nonnegative(), fgbBeta: finite.nonnegative(),
   fgbZeta: finite.nonnegative(), fgbAverage: finite.min(0).max(1),
   fgbRuntimeMs: z.number().int().positive(),
-  fgbMaxCandidates: z.number().int().min(1).max(10).default(4),
+  fgbMaxCandidates: z.number().int().min(1).max(10).default(5),
+  fgbExcludedBands: z.array(fgbFrequencyBandSchema).max(6).default([]),
   fgbMaxErrors: z.number().int().min(0).max(3),
   fgbHeaderErrors: z.number().int().min(0).max(3),
   fgbBch2MaxErrors: z.number().int().min(0).max(2),

@@ -1,3 +1,23 @@
+/*
+ * SarsatSDR
+ * Copyright (C) 2026 Frederic BORRY - F4JRX
+ * Authors: Frederic BORRY - F4JRX and Copilot (AI-assisted development).
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #include <cospas/decoder.hpp>
 #include "frontend_mixer.hpp"
 #include "dsp_tables.hpp"
@@ -367,6 +387,9 @@ public:
                 float peak = -100;
                 for (int n = 406; n <= 1650; ++n) {
                     const double frequency = (n - 1023) * 56.25;
+                    if (std::any_of(settings.fgb_excluded_bands.begin(), settings.fgb_excluded_bands.end(),
+                        [&](const auto& band) { return std::abs(frequency - band.offset_hz) <= band.deviation_hz; }))
+                        continue;
                     const bool occupied = std::any_of(active_channels.begin(), active_channels.end(), [&](const auto& other) {
                         return other.busy() && std::abs(other.frequency() - frequency) < 50 * 56.25;
                     });
@@ -587,6 +610,12 @@ std::vector<Frame> decode_sgb(std::span<const Sample> input, const DecoderSettin
 
 void validate_settings(std::uint32_t rate, const DecoderSettings& settings) {
     if (rate < 76800 || rate > 10000000) throw std::invalid_argument("Unsupported I/Q sample rate");
+    if (settings.fgb_excluded_bands.size() > 6 ||
+        std::any_of(settings.fgb_excluded_bands.begin(), settings.fgb_excluded_bands.end(), [](const auto& band) {
+            return !std::isfinite(band.offset_hz) || std::abs(band.offset_hz) > 1e9 ||
+                !std::isfinite(band.deviation_hz) || band.deviation_hz <= 0 || band.deviation_hz > 1e6;
+        }))
+        throw std::invalid_argument("Invalid FGB excluded frequency band");
     if (settings.search_depth < 3 || settings.search_depth > 9 ||
         settings.prn_alignment < 0 || settings.prn_alignment > 2)
         throw std::invalid_argument("Invalid search settings");

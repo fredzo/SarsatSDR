@@ -103,15 +103,17 @@ receiver's analog-to-digital converter.
 
 ![Close-up of the live acquisition indicator and FGB timer changing during reception](images/countdown.gif)
 
-- With countdown enabled, each **unfiltered FGB frame** restarts the timer.
+- With countdown enabled, each **unfiltered, non-orbitographic FGB frame** restarts the timer.
   The default duration is **50 seconds**; SGB frames do not restart it.
+- **Orbito countdown**, off by default, also allows unfiltered FGB ORB frames
+  to restart it. Filtered frames never trigger a countdown, regardless of this option.
 - Before the first qualifying frame, the timer counts up. After the countdown
   expires, it counts up again unless **Auto reload countdown** is enabled.
   The elapsed counter wraps after 999.
 - With **Countdown beep** enabled, low beeps sound at 5, 4, 3, and 2 seconds,
   followed by a higher beep at 1 second.
 - Long-press the timer to reset it to zero in count-up mode, with a double beep.
-  This does not change the auto-reload preference. The next unfiltered FGB frame
+  This does not change the auto-reload preference. The next qualifying FGB frame
   restarts the countdown.
 - Turning off **FGB countdown** removes the numeric timer, not the rotating
   acquisition indicator.
@@ -436,7 +438,10 @@ When editing a number, the app keeps the input above the on-screen keyboard.
 
 The single-line **Version** strip at the top of Settings, before Filtering,
 shows the installed application version. Include it when reporting a problem
-or comparing builds.
+or comparing builds. On the right, the **circled question-mark** button opens About SarsatSDR, with author credits,
+links to this detailed guide and the full license, and the warranty and liability
+disclaimer. **Support the project**, marked with a coffee-cup icon, opens Frédéric BORRY's PayPal page in your
+browser; supporting the project is optional and the application is free to use.
 
 ![The single-line Version strip at the beginning of Settings](images/settings-version.png)
 
@@ -444,24 +449,75 @@ or comparing builds.
 
 <table>
 <tr>
-<td width="60%" valign="top"><a href="images/settings-audio-guide.png"><img src="images/settings-audio-guide.png" alt="Filtering and Audio settings with six numbered groups" width="100%"></a></td>
+<td width="60%" valign="top"><a href="images/settings-audio-guide.png"><img src="images/settings-audio-guide.png" alt="Filtering and Audio settings with eight numbered groups, six frequency filters, an amber PRE badge, and three notification checkboxes" width="100%"></a></td>
 <td valign="top">
 <ol>
 <li><strong>Filter invalid frames.</strong> Hides frames with failed BCH checks or applicable correction-limit failures. The stored messages remain available when the filter is disabled and are still exported.</li>
 <li><strong>Filter system frames.</strong> Hides FGB ORB and SGB SYSTM messages. Turn it off when exploring bundled system-beacon examples.</li>
-<li><strong>Filtering defaults.</strong> Restores both display filters to enabled after confirmation.</li>
+<li><strong>Filtering defaults.</strong> Restores both display filters and all six FGB frequency filters after confirmation. Stop acquisition first.</li>
 <li><strong>FGB FM demodulation.</strong> Enables audio for the next acquisition/playback start. The independent FM volume defaults to 50%. Hearing FM does not imply successful synchronization or BCH decoding.</li>
-<li><strong>Notifications.</strong> Enables distinct frame sounds and sets their volume. Different sounds indicate accepted, invalid, and filtered messages. The notification volume also controls countdown beeps.</li>
+<li><strong>Notifications.</strong> Independent <strong>Valid frames</strong>, <strong>Invalid frames</strong>, and <strong>Filtered frames</strong> checkboxes, all enabled by default, select distinct sounds. Filtered takes precedence over valid/invalid; disabling its sound does not play another category instead. Notification volume follows the three checkboxes and also controls countdown beeps.</li>
 <li><strong>Audio defaults.</strong> Resets FM audio, notifications, and countdown preferences together after confirmation, without resetting filters or RF settings.</li>
+<li><strong>FGB frequency filters.</strong> Enable or disable individual frequency bands. The amber <strong>PRE</strong> badge, styled like corrected BCH badges, identifies pre-decoder mode even when that band is unchecked.</li>
+<li><strong>Edit frequency filters.</strong> The right-aligned pencil opens the six-band editor below. Stop acquisition before editing band parameters.</li>
 </ol>
 </td>
 </tr>
 </table>
 
-Both filters are **enabled by default**; they are deliberately disabled in these
+Invalid and system frame filters are **enabled by default**; they are deliberately disabled in these
 screenshots to show system/test traffic and invalid frames.
-Filtering affects presentation, not RF acquisition. FGB FM audio is muted for
+The invalid/system filters affect presentation, not RF acquisition. FGB FM audio is muted for
 the first two seconds of live acquisition while the frontend settles.
+
+#### 🎛️ FGB frequency filter editor
+
+Open the **pencil** button to configure all six bands. The outer frequency
+checkboxes enable filtering; the popup's **PRE** checkboxes choose where it happens.
+Seeing an amber badge alone does not mean that filtering is enabled.
+
+<table>
+<tr>
+<td width="60%" valign="top"><a href="images/settings-frequency-filters-guide.png"><img src="images/settings-frequency-filters-guide.png" alt="FGB frequency filter editor with six center frequencies and deviations, amber PRE checkboxes, Default Settings, Cancel, and Save; five numbered controls" width="100%"></a></td>
+<td valign="top">
+<ol>
+<li><strong>Frequency centers.</strong> Enter each absolute frequency in MHz. The stored value remains relative to the acquisition center.</li>
+<li><strong>Deviation.</strong> Enter the half-width in kHz: 1 means the center plus or minus 1 kHz, including both edges.</li>
+<li><strong>PRE checkboxes.</strong> Each uses the same amber badge as the Filtering row. Checked means pre-decoder candidate exclusion; unchecked means application-side filtering after decoding. Only band 6 uses PRE by default.</li>
+<li><strong>Default Settings.</strong> Restores all six editable centers, deviations, and PRE choices relative to the current acquisition center. It does not change which outer frequency checkboxes are enabled, and does not apply changes until Save.</li>
+<li><strong>Save.</strong> Validates and stores the changes. Cancel or the close button discards edits, including a pending reset.</li>
+</ol>
+</td>
+</tr>
+</table>
+
+Default bands at the default **406.050 MHz** acquisition center:
+
+| Frequency at 406.050 MHz acquisition center | Deviation | Enabled | pre-decoder |
+|---|---|---|---|
+| 406.022 MHz | +/-1 kHz | Yes | No |
+| 406.031 MHz | +/-1 kHz | No | No |
+| 406.034 MHz | +/-1 kHz | Yes | No |
+| 406.049 MHz | +/-1 kHz | No | No |
+| 406.052 MHz | +/-1 kHz | Yes | No |
+| 406.061 MHz | +/-2 kHz | Yes | Yes |
+
+Band edges are included. These filters only apply to FGB, not SGB. Offsets are
+stored relative to the acquisition center, while labels show absolute frequencies.
+Moving the center from 406.050 to 406.200 MHz therefore moves the first filter
+from 406.022 to 406.172 MHz (and the others by the same +150 kHz).
+
+Without **pre-decoder**, frequency filters hide decoded frames like the invalid/system
+filters: stored messages remain available and exported. With **pre-decoder**, enabled
+bands are excluded from FGB candidate selection before a detector slot is allocated;
+excluded signals produce no decoded frame, notification, or history entry.
+Stop acquisition before editing band parameters or toggling pre-decoder bands;
+application-only checkboxes can still change while receiving.
+
+Defaults help suppress system traffic that can disrupt beacon searches near
+COSPAS/SARSAT LUTs. At certain times of day, bursts around **406.061 MHz** may
+send one frame every second. Filtering that band **pre-decoder** prevents these
+bursts from saturating the candidate detectors rather than merely hiding their frames.
 
 ### ⏱️ Countdown
 
@@ -470,7 +526,7 @@ the first two seconds of live acquisition while the frontend settles.
 <td width="60%" valign="top"><a href="images/settings-countdown-guide.png"><img src="images/settings-countdown-guide.png" alt="Countdown settings and the start of RTL-SDR settings with three numbered groups" width="100%"></a></td>
 <td valign="top">
 <ol>
-<li><strong>Countdown controls.</strong> Enable FGB countdown, set its duration in seconds, toggle the final beeps, and choose whether it automatically reloads after expiry.</li>
+<li><strong>Countdown controls.</strong> Enable FGB countdown, set its duration in seconds, toggle the final beeps, and choose whether it automatically reloads after expiry. <strong>Orbito countdown</strong>, to the right of auto-reload, allows unfiltered orbitographic FGB frames to restart it; it is off by default. Filtered frames never trigger it.</li>
 <li><strong>RTL-SDR defaults.</strong> This separate reset restores USB gain/AGC/calibration and advanced FGB/SGB parameters, after confirmation. It is not the Audio reset.</li>
 <li><strong>Fixed acquisition configuration.</strong> RTL-SDR reception uses 921600 complex samples/s with Bias-T off. Scroll down for USB and decoder parameters.</li>
 </ol>
@@ -479,7 +535,9 @@ the first two seconds of live acquisition while the frontend settles.
 </table>
 
 Countdown duration accepts **1 to 3600 seconds**, default **50**.
-Countdown and its beeps are enabled by default; auto-reload is off.
+Countdown and its beeps are enabled by default; auto-reload and **Orbito countdown**
+(to its right) are off. Orbitographic frames only trigger countdown when explicitly
+enabled and unfiltered; no filtered frame ever starts it.
 See the [timer behavior](#understand-the-fgb-timer) above for count-up mode and
 long-press reset.
 
@@ -515,7 +573,7 @@ estimates. Raising calibration does not improve the received signal.
 <li><strong>Detection and candidate lifetime (first row).</strong> OverPeak sets the detection peak-above-average threshold; Detection Average controls detection averaging; RunTime is the processing lifetime of a candidate in milliseconds.</li>
 <li><strong>PLL tracking (second row).</strong> Alpha and Beta control phase/frequency tracking during initial acquisition. Zeta controls subsequent phase tracking.</li>
 <li><strong>Error limits.</strong> BCH-1, BCH-2, and header limits control accepted corrections/mismatches. They do not increase the BCH code's mathematical correction capacity.</li>
-<li><strong>Max candidates.</strong> Limits simultaneous FGB candidates from 1 to 10, default 4. It applies to reception and playback, including validated profiles. Reducing it can leave fewer slots available in a busy band.</li>
+<li><strong>Max candidates.</strong> Limits simultaneous FGB candidates from 1 to 10, default 5. It applies to reception and playback, including validated profiles. The FGB meter scales its ten LEDs to this limit: with 5 candidates maximum, 1 lights 2 LEDs, 2 light 4, and 5 light all 10. Fractional LED counts round up; the SGB meter is unchanged. Reducing the limit can leave fewer slots available in a busy band.</li>
 </ol>
 </td>
 </tr>
@@ -528,7 +586,7 @@ estimates. Raising calibration does not improve the received signal.
 | Detection Average | 0.045 |
 | RunTime | 550 ms |
 | BCH-1 / BCH-2 / header max errors | 3 / 2 / 2 |
-| Max candidates | 4 |
+| Max candidates | 5 |
 
 These are advanced controls. Start with defaults and compare the same recording
 when testing a change. Raising allowed errors is not a substitute for a clean

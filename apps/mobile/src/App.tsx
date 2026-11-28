@@ -1,3 +1,23 @@
+/*
+ * SarsatSDR
+ * Copyright (C) 2026 Frederic BORRY - F4JRX
+ * Authors: Frederic BORRY - F4JRX and Copilot (AI-assisted development).
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
 import { Animated, Easing, FlatList, Keyboard, KeyboardAvoidingView, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, type StyleProp,
   type TextStyle, type ViewStyle } from "react-native";
@@ -8,7 +28,7 @@ import Svg, { G, Path, Polyline, Text as SvgText } from "react-native-svg";
 import { Activity, ChevronLeft, ChevronRight, Download, Eraser, FileAudio, FileSearch, FileText, FlaskConical, FolderClock, FolderOpen, Globe, MapPin,
   Navigation, Play, BoomBox, Radio, RadioTower, RefreshCw, Settings as SettingsIcon, Square, Usb, type LucideIcon,
   ArrowBigRight,
-  ArrowBigLeft, Circle, Copy, ExternalLink, Minus, Pencil, Plus, Share2, Trash2, X } from "lucide-react-native";
+  ArrowBigLeft, Circle, CircleHelp, Coffee, Copy, ExternalLink, Minus, Pencil, Plus, Share2, Trash2, X } from "lucide-react-native";
 import { startSchema, playbackConfiguration, type Frame, type Info, type Settings, type SpectrumEvent,
   type Diagnostics, type AcquisitionChannel, type ServerEvent } from "@sarsat/shared/protocol";
 import { beaconLocator, beaconPosition, geoUrl, googleMapsUrl, wazeUrl } from "@sarsat/shared/beacon-position";
@@ -19,7 +39,7 @@ import { fitExtraFields, formatFieldFrequencies, frameBadgeFontSize, frameDetail
   frameTableFontSize, frameTableHeaders, frameTableLayout, headerStatus, receivedTime } from "./frame-summary";
 import type { Transport } from "./transport-types";
 import { AcquisitionSpinner, type CountdownStart } from "./AcquisitionSpinner";
-import { frameNotification, isFrameFiltered, receptionPreferencesSchema } from "./reception-preferences";
+import { frameNotification, isFrameFiltered, startsFgbCountdown, receptionPreferencesSchema, type ReceptionPreferences } from "./reception-preferences";
 import { useReceptionPreferences, useStoredPreferences } from "./use-reception-preferences";
 import { appPreferencesSchema } from "./app-preferences";
 import { useReceptionAudio } from "./use-reception-audio";
@@ -31,6 +51,36 @@ import { playbackProgress } from "./playback-progress";
 import appConfig from "../app.json";
 
 type Action = { label: string; icon: LucideIcon; run: () => void; kind?: "stop" };
+function AboutPopup({ close }: { close: () => void }) {
+  const [error, setError] = useState("");
+  function open(url: string) {
+    setError("");
+    void Linking.openURL(url).catch(reason => setError(`Could not open link: ${String(reason)}`));
+  }
+  return <Modal transparent animationType="fade" onRequestClose={close}>
+    <View style={s.popupBackdrop}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={close} accessible={false} />
+      <View style={[s.popup, { width: 650, maxHeight: "85%" }]} accessibilityViewIsModal>
+        <View style={s.popupHeader}>
+          <Text style={[s.h3, { marginBottom: 0 }]}>About SarsatSDR</Text>
+          <Button iconOnly title="Close about" icon={X} onPress={close} />
+        </View>
+        <ScrollView style={{ flexShrink: 1 }}>
+          <Text style={s.p}>Developed by Frédéric BORRY - F4JRX and Copilot.</Text>
+          <Text style={s.p}>SarsatSDR receives and decodes first- and second-generation COSPAS-SARSAT beacon messages using RTL-SDR receivers or I/Q WAV recordings.</Text>
+          <Text style={s.p}>SarsatSDR is free to use and licensed under the GNU General Public License, version 3 or later (GPL-3.0-or-later). The full license governs its use. Third-party components retain their own licenses.</Text>
+          <Text style={s.p}>The application is provided "AS IS", without any warranty, including merchantability, fitness for a particular purpose, or the accuracy, completeness, or availability of decoded information. To the extent permitted by applicable law, the authors and contributors accept no liability for any loss, damage, or other consequences arising from its use.</Text>
+          <Text style={s.p}>This is not a certified distress-alerting or search-and-rescue system. Do not rely on it for emergency or safety-critical decisions, or as a replacement for official COSPAS-SARSAT services. You are responsible for complying with applicable radio and privacy laws.</Text>
+        </ScrollView>
+        {!!error && <Text accessibilityRole="alert" style={s.errorText}>{error}</Text>}
+        <Button title="Detailed documentation" icon={ExternalLink}
+          onPress={() => open("https://github.com/fredzo/SarsatSDR/blob/main/docs/README.md")} />
+        <Button title="Full license" icon={ExternalLink}
+          onPress={() => open("https://github.com/fredzo/SarsatSDR/blob/main/LICENSE")} />
+      </View>
+    </View>
+  </Modal>;
+}
 function ActionPopup({ title, actions, close }: { title: string; actions: Action[]; close: () => void }) {
   return <Modal transparent animationType="fade" onRequestClose={close}>
     <View style={s.popupBackdrop}>
@@ -121,10 +171,11 @@ function CaptureProgress({ elapsed, duration, recording }: { elapsed: number; du
       : <View style={[s.progressBar, { width: `${Math.min(100, Math.min(elapsed, duration) / duration * 100)}%` }]} />}
   </View>;
 }
-function Check({ label, value, onChange, disabled, compact }: { label: string; value: boolean; onChange: (value: boolean) => void; disabled?: boolean; compact?: boolean }) {
-  return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: value, disabled }} disabled={disabled}
+function Check({ label, value, onChange, disabled, compact, accessibilityLabel }: { label: ReactNode; value: boolean; onChange: (value: boolean) => void; disabled?: boolean; compact?: boolean; accessibilityLabel?: string }) {
+  return <Pressable accessibilityRole="checkbox" accessibilityLabel={accessibilityLabel} accessibilityState={{ checked: value, disabled }} disabled={disabled}
     onPress={() => onChange(!value)} style={[s.check, compact && { minHeight: 20 }, disabled && { opacity: .5 }]}>
-    <View style={[s.box, value && s.boxOn]}>{value && <Text style={s.tick}>✓</Text>}</View><Text style={s.small}>{label}</Text>
+    <View style={[s.box, value && s.boxOn]}>{value && <Text style={s.tick}>✓</Text>}</View>
+    {typeof label === "string" ? <Text style={s.small}>{label}</Text> : label}
   </Pressable>;
 }
 function NumberField({ label, value, onChange, disabled, style, big, onFocus, min, max }: { label: string; value: number | string | undefined;
@@ -188,6 +239,61 @@ function CenterFrequency({ value, disabled, onChange }: {
 }
 function Badge({ text, tone, accessibilityLabel }: { text: string; tone: "valid" | "invalid" | "corrected"; accessibilityLabel?: string }) {
   return <Text accessibilityLabel={accessibilityLabel} style={[s.badge, s[tone]]}>{text}</Text>;
+}
+function FrequencyFiltersPopup({ filters, centerHz, save, close }: {
+  filters: ReceptionPreferences["fgbFrequencyFilters"]; centerHz: number;
+  save: (filters: ReceptionPreferences["fgbFrequencyFilters"]) => void; close: () => void;
+}) {
+  const toDraft = (values: ReceptionPreferences["fgbFrequencyFilters"]) => values.map(filter => ({
+    frequency: String((centerHz + filter.offsetHz) / 1e6),
+    deviation: String(filter.deviationHz / 1000), preDecoder: filter.preDecoder,
+  }));
+  const [draft, setDraft] = useState(() => toDraft(filters));
+  const [error, setError] = useState("");
+  function apply() {
+    const values = draft.map((item, index) => ({
+      ...filters[index], offsetHz: Math.round(Number(item.frequency.replace(",", ".")) * 1e6) - centerHz,
+      deviationHz: Number(item.deviation.replace(",", ".")) * 1000, preDecoder: item.preDecoder,
+    }));
+    const parsed = receptionPreferencesSchema.shape.fgbFrequencyFilters.safeParse(values);
+    if (!parsed.success || draft.some(item => !item.frequency.trim() || !item.deviation.trim() ||
+      Number(item.frequency.replace(",", ".")) < 100 || Number(item.frequency.replace(",", ".")) > 999)) {
+      setError("Enter frequencies between 100 and 999 MHz and deviations greater than 0, up to 1000 kHz.");
+      return;
+    }
+    save(parsed.data);
+    close();
+  }
+  return <Modal transparent animationType="fade" onRequestClose={close}>
+    <KeyboardAvoidingView style={s.popupBackdrop} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      <View style={[s.popup, { width: 750, maxHeight: "85%" }]} accessibilityViewIsModal>
+        <View style={s.popupHeader}><Text style={s.h3}>FGB frequency filters</Text>
+          <Button iconOnly title="Close frequency filters" icon={X} onPress={close} />
+        </View>
+        <ScrollView keyboardShouldPersistTaps="handled">
+          {draft.map((item, index) => <View key={index} style={[s.row, { marginBottom: 8 }]}>
+            <View style={[s.field, s.fill]}><Text style={s.label}>Filter {index + 1} · MHz</Text>
+              <TextInput accessibilityLabel={`Filter ${index + 1} frequency · MHz`} style={s.input} keyboardType="decimal-pad"
+                value={item.frequency} onChangeText={frequency => setDraft(old => old.map((row, n) => n === index ? { ...row, frequency } : row))} />
+            </View>
+            <View style={[s.field, s.fill]}><Text style={s.label}>Deviation · kHz</Text>
+              <TextInput accessibilityLabel={`Filter ${index + 1} deviation · kHz`} style={s.input} keyboardType="decimal-pad"
+                value={item.deviation} onChangeText={deviation => setDraft(old => old.map((row, n) => n === index ? { ...row, deviation } : row))} />
+            </View>
+            <Check label={<Badge text="PRE" tone="corrected" />} accessibilityLabel={`Filter ${index + 1} pre-decoder`} value={item.preDecoder}
+              onChange={preDecoder => setDraft(old => old.map((row, n) => n === index ? { ...row, preDecoder } : row))} />
+          </View>)}
+        </ScrollView>
+        {!!error && <Text accessibilityRole="alert" style={s.errorText}>{error}</Text>}
+        <View style={s.row}><Button title="Cancel" icon={X} onPress={close} />
+          <Button title="Default Settings" icon={RefreshCw} onPress={() => {
+            setDraft(toDraft(receptionPreferencesSchema.parse({}).fgbFrequencyFilters));
+            setError("");
+          }} />
+          <Button title="Save" icon={Pencil} onPress={apply} /></View>
+      </View>
+    </KeyboardAvoidingView>
+  </Modal>;
 }
 function bchStatus(frame: Frame, n: number, compact = false) {
     const bch = frame.bch[n];
@@ -678,6 +784,9 @@ export default function App() {
   const [status, setStatus] = useState<Info["status"]>("idle");
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [frequencyFiltersOpen, setFrequencyFiltersOpen] = useState(false);
+  const [activeFgbMaxCandidates, setActiveFgbMaxCandidates] = useState(5);
   const [recordingFile, setRecordingFile] = useState<string | null>(null);
   const [lastRecording, setLastRecording] = useState("");
   const [recordingPending, setRecordingPending] = useState(false);
@@ -827,7 +936,7 @@ export default function App() {
           const preferences = receptionRef.current;
           if (!isFrameFiltered(entry.frame, preferences)) {
             setSelected(entry.id);
-            if (entry.frame.generation === 1 && preferences.countdown)
+            if (startsFgbCountdown(entry.frame, preferences))
               setCountdownStart({ id: entry.id, at: Date.now() });
           }
           const sound = frameNotification(entry.frame, preferences);
@@ -869,8 +978,11 @@ export default function App() {
     }
     const location = selectedDevice.split(":").map(Number);
     const parsed = startSchema.safeParse({ type: "start", source, centerHz: Math.round(center * 1e6),
-      gainIndex: gain, agc, sample, removeDc, noisePrerollMs: preroll, settings, fgbFm: receptionRef.current.fgbFm,
+      gainIndex: gain, agc, sample, removeDc, noisePrerollMs: preroll, fgbFm: receptionRef.current.fgbFm,
       ...(source === "sample" && useSampleProfile ? playback : {}),
+      settings: { ...(source === "sample" && useSampleProfile ? playback?.settings : settings),
+        fgbExcludedBands: receptionRef.current.fgbFrequencyFilters.filter(filter => filter.enabled && filter.preDecoder)
+          .map(({ offsetHz, deviationHz }) => ({ offsetHz, deviationHz })) },
       ...(selectedDevice ? { bus: location[0], address: location[1] } : {}) });
     if (!parsed.success) {
       setError(parsed.error.issues.map(issue => issue.message).join(" · "));
@@ -885,6 +997,7 @@ export default function App() {
       setSelected(null);
       setSession(null);
       setStatus("starting");
+      setActiveFgbMaxCandidates(parsed.data.settings.fgbMaxCandidates);
       if (parsed.data.fgbFm && parsed.data.settings.fgb) fmAudio.current?.activate();
       transport.send(parsed.data);
       return true;
@@ -947,7 +1060,7 @@ export default function App() {
     void historyAction(async () => setSessionSummaries(await history.list()));
   }
   const visibleEntries = useMemo(() => entries.filter(entry => !isFrameFiltered(entry.frame, reception)),
-    [entries, reception.filterInvalid, reception.filterOrbitographic]);
+    [entries, reception.filterInvalid, reception.filterOrbitographic, reception.fgbFrequencyFilters]);
   const activeFrame = visibleEntries.find(entry => entry.id === selected) ?? visibleEntries.at(-1);
   const progress = session ? playbackProgress(metrics?.samples ?? 0, session.sampleRateHz, session.noisePrerollMs ?? 0) : null;
   const elapsed = progress?.elapsedSeconds ?? 0;
@@ -962,7 +1075,7 @@ export default function App() {
   const frameCount = visibleEntries.length === entries.length ? String(entries.length) : `${visibleEntries.length}/${entries.length}`;
   const spectrum = (compact = false) => <Spectrum line={line} channels={channels} centerHz={session?.centerHz ?? center * 1e6}
     epoch={epoch} floor={base} range={range} average={average} speed={waterfallSpeed}
-    sgbDetections={sgbDetections} fgbDetections={fgbDetections} compact={compact}
+    sgbDetections={sgbDetections} fgbDetections={fgbDetections} fgbMaxCandidates={busy ? activeFgbMaxCandidates : settings?.fgbMaxCandidates ?? 5} compact={compact}
     automatic={waterfallAutomatic} calibrationDb={session?.source === "rtl" ? calibrationDb : 0} relative={session?.source === "sample"} />;
   const frameActions = <View style={[s.row, { padding: 8 }]}>
     <View style={s.fill}><Text style={[s.h3, { marginBottom: 0 }]}>FRAMES ({frameCount})</Text>
@@ -977,17 +1090,20 @@ export default function App() {
   </View>;
 
   return <View style={s.main}>
+    {aboutOpen && <AboutPopup close={() => setAboutOpen(false)} />}
+    {frequencyFiltersOpen && <FrequencyFiltersPopup filters={reception.fgbFrequencyFilters} centerHz={Math.round(center * 1e6)}
+      save={filters => changeReception("fgbFrequencyFilters", filters)} close={() => setFrequencyFiltersOpen(false)} />}
     <Text aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
       style={s.tableMeasure} onLayout={event => setGlyphWidth(event.nativeEvent.layout.width / 10)}>0000000000</Text>
     {confirmDefaults && <ActionPopup title={`Restore ${confirmDefaults} default settings?`} close={() => setConfirmDefaults(null)} actions={[
       { label: "Cancel", icon: X, run: () => {} },
       { label: "Restore default settings", icon: RefreshCw, kind: "stop", run: () => {
         if (confirmDefaults === "Audio") {
-          const { filterInvalid: _invalid, filterOrbitographic: _system, ...audio } = receptionPreferencesSchema.parse({});
+          const { filterInvalid: _invalid, filterOrbitographic: _system, fgbFrequencyFilters: _frequencies, ...audio } = receptionPreferencesSchema.parse({});
           replaceReception(audio);
         } else if (confirmDefaults === "Filtering") {
-          const { filterInvalid, filterOrbitographic } = receptionPreferencesSchema.parse({});
-          replaceReception({ filterInvalid, filterOrbitographic });
+          const { filterInvalid, filterOrbitographic, fgbFrequencyFilters } = receptionPreferencesSchema.parse({});
+          replaceReception({ filterInvalid, filterOrbitographic, ...(busy ? {} : { fgbFrequencyFilters }) });
         } else if (confirmDefaults === "Receiver" && info && settings) {
           const { center: defaultCenter, base, range, average, waterfallAutomatic, waterfallSpeed } = appPreferencesSchema.parse({});
           const { fgb, sgb, fgbNormal, fgbSelfTest, normalPrn, testPrn } = info.settings;
@@ -1198,16 +1314,36 @@ export default function App() {
       {tab === "Settings" && <View style={s.settingsPage}>
         <View style={[s.fieldset, s.row, { flexWrap: "nowrap", paddingVertical: 12 }]}>
           <Text style={[s.h2, { marginBottom: 0 }]}>Version</Text><Text style={s.small}>{appConfig.expo.version}</Text>
+          <View style={s.fill} />
+          <Button iconOnly title="About SarsatSDR" icon={CircleHelp} onPress={() => setAboutOpen(true)} />
+          <Button title="Support the project" icon={Coffee} onPress={() => {
+            setError("");
+            void Linking.openURL("https://www.paypal.com/paypalme/fredericborry")
+              .catch(reason => setError(`Could not open support link: ${String(reason)}`));
+          }} />
         </View>
         <View style={s.fieldset}>
           <View style={[s.row, { justifyContent: "space-between" }]}><Text style={s.h2}>Filtering</Text>
-            <Button title="Default Settings" icon={RefreshCw} disabled={!preferencesReady} onPress={() => setConfirmDefaults("Filtering")} />
+            <Button title="Default Settings" icon={RefreshCw} disabled={!preferencesReady || busy} onPress={() => setConfirmDefaults("Filtering")} />
           </View>
           <View style={s.settingsGrid}>
             <Check label="Filter invalid frames" value={reception.filterInvalid} disabled={!preferencesReady}
               onChange={value => changeReception("filterInvalid", value)} />
             <Check label="Filter system frames" value={reception.filterOrbitographic} disabled={!preferencesReady}
               onChange={value => changeReception("filterOrbitographic", value)} />
+          </View>
+          <View style={[s.row, { marginTop: 8 }]}>
+            <View style={[s.row, s.fill]}>
+              {reception.fgbFrequencyFilters.map((filter, index) => <View key={index} style={[s.row, { gap: 4, flexWrap: "nowrap" }]}>
+                <Check label={`${(((session && busy ? session.centerHz : center * 1e6) + filter.offsetHz) / 1e6).toFixed(3)} ±${filter.deviationHz / 1000} kHz`}
+                  value={filter.enabled} disabled={!preferencesReady || (busy && filter.preDecoder)}
+                  onChange={enabled => changeReception("fgbFrequencyFilters",
+                    reception.fgbFrequencyFilters.map((row, n) => n === index ? { ...row, enabled } : row))} />
+                {filter.preDecoder && <Badge text="PRE" tone="corrected" accessibilityLabel="Pre-decoder filter" />}
+              </View>)}
+            </View>
+            <Button iconOnly title="Edit FGB frequency filters" icon={Pencil} disabled={!preferencesReady || busy}
+              onPress={() => setFrequencyFiltersOpen(true)} />
           </View>
         </View>
         <View style={[s.fieldset, s.settingsBlock]}>
@@ -1224,8 +1360,12 @@ export default function App() {
           </View>
           <View style={s.fieldset}><Text style={s.legend}>Notifications</Text>
           <View style={s.settingsGrid}>
-            <Check label="Frame audio notifications" value={reception.notifications} disabled={!preferencesReady}
+            <Check label="Valid frames" value={reception.notifications} disabled={!preferencesReady}
               onChange={value => changeReception("notifications", value)} />
+            <Check label="Invalid frames" value={reception.invalidNotifications} disabled={!preferencesReady}
+              onChange={value => changeReception("invalidNotifications", value)} />
+            <Check label="Filtered frames" value={reception.filteredNotifications} disabled={!preferencesReady}
+              onChange={value => changeReception("filteredNotifications", value)} />
             <Range label="Notification volume · %" value={Math.round(reception.volume * 100)} min={0} max={100} step={1}
               disabled={!preferencesReady} onChange={value => changeReception("volume", value / 100)} />
           </View>
@@ -1241,6 +1381,8 @@ export default function App() {
               onChange={value => changeReception("countdownBeep", value)} />
             <Check label="Auto reload countdown" value={reception.autoReloadCountdown} disabled={!preferencesReady}
               onChange={value => changeReception("autoReloadCountdown", value)} />
+            <Check label="Orbito countdown" value={reception.orbitoCountdown} disabled={!preferencesReady}
+              onChange={value => changeReception("orbitoCountdown", value)} />
           </View>
           </View>
         </View>

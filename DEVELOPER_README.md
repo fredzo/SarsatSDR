@@ -55,15 +55,22 @@ from the command line without a graphical interface.
   opens audio only after an unmodulated carrier at the start of the frame
   is confirmed, then keeps listening until it disappears, without waiting for BCH. FM audio
   is muted during the first 2 seconds of each RTL-SDR acquisition.
-- Distinct MP3 notifications for BCH OK, KO, and filtered frames. On Android,
+- Distinct MP3 notifications for valid, invalid, and filtered frames, independently
+  enabled by default. On Android,
   each sound is preloaded and played once at an inaudible volume on startup;
   the shared volume
   is adjustable. BCH KO and `Filter system frames` (FGB ORB / SGB SYSTM) display filters
   are reversible without losing stored frames or excluding them from exports.
+  Six center-relative FGB frequency filters support application-side filtering or
+  pre-decoder candidate exclusion; see the [application guide](docs/README.md#settings)
+  for frequencies and defaults. FGB max candidates defaults to 5; its ten-LED meter
+  scales proportionally to the configured limit.
 - Acquisition spinner and a default 50 s FGB countdown, restarted by each
-  unfiltered FGB frame. Low beeps at 5/4/3/2 s, then a high beep at 1 s, with optional auto-reload;
+  unfiltered non-orbitographic FGB frame. Optional `Orbito countdown` (off by default)
+  includes unfiltered orbitographic frames; filtered frames never trigger it.
+  Low beeps at 5/4/3/2 s, then a high beep at 1 s, with optional auto-reload;
   a modulo-1000 count-up timer runs at startup and after expiry without auto-reload.
-  Long press: reset to count-up mode until the next unfiltered FGB frame,
+  Long press: reset to count-up mode until the next qualifying FGB frame,
   with a double beep, without changing the auto-reload setting. Sounds, countdown, and beeps are enabled by default,
   filters are enabled, and auto-reload is disabled. Settings groups Filtering, Audio, and RTL-SDR,
   with confirmation before restoring defaults for each group and for Receiver.
@@ -576,9 +583,13 @@ size and memory offset of the 65-character field. C/C++ consumers
 must be recompiled with the current public names. The current ABI is v2:
 acquisition arrays can contain up to 10 simultaneous FGB channels,
 with corresponding telemetry, FFT markers, and FM audio selection.
-The FGB "max candidates" setting is saved in Settings: 4 by default,
+The FGB "max candidates" setting is saved in Settings: 5 by default,
 from 1 to 10, applying to reception and playback, including with a validated profile.
 On the command line: `--fgb-max-candidates N`.
+`--fgb-exclude-band OFFSET_HZ DEVIATION_HZ` excludes candidate frequencies in an
+inclusive center-relative band; repeat up to six times. The C API exposes these
+as the optional `cs_config` tail fields `fgb_excluded_band_count` and
+`fgb_excluded_bands`; older configuration sizes retain no frequency exclusions.
 FFTW plans require plan creation and batch calls to be serialized.
 
 ## ✅ Validation

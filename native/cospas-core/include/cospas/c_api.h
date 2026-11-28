@@ -1,3 +1,23 @@
+/*
+ * SarsatSDR
+ * Copyright (C) 2026 Frederic BORRY - F4JRX
+ * Authors: Frederic BORRY - F4JRX and Copilot (AI-assisted development).
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #ifndef COSPAS_C_API_H
 #define COSPAS_C_API_H
 
@@ -45,6 +65,11 @@ typedef struct cs_error {
     char message[256];
 } cs_error;
 
+typedef struct cs_fgb_frequency_band {
+    double offset_hz;
+    double deviation_hz;
+} cs_fgb_frequency_band;
+
 typedef struct cs_config {
     uint32_t struct_size;
     uint32_t abi_version;
@@ -74,7 +99,9 @@ typedef struct cs_config {
     uint32_t show_fgb_bch_failures; /* ABI v1 tail extension; older configurations use 0. */
     uint32_t fgb_normal; /* ABI v1 tail extension; older configurations enable both FGB modes. */
     uint32_t fgb_self_test;
-    int32_t fgb_max_candidates; /* ABI v2 tail extension, 1..10; older configurations use 4. */
+    int32_t fgb_max_candidates; /* ABI v2 tail extension, 1..10; older configurations use 5. */
+    uint32_t fgb_excluded_band_count; /* ABI v2 tail extension, 0..6; older configurations exclude no bands. */
+    cs_fgb_frequency_band fgb_excluded_bands[6];
 } cs_config;
 
 typedef struct cs_bch_status {

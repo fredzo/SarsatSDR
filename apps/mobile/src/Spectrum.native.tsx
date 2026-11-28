@@ -1,3 +1,23 @@
+/*
+ * SarsatSDR
+ * Copyright (C) 2026 Frederic BORRY - F4JRX
+ * Authors: Frederic BORRY - F4JRX and Copilot (AI-assisted development).
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Text, View, StyleSheet, type LayoutChangeEvent } from "react-native";
 import { AlphaType, Canvas, Circle, ColorType, DashPathEffect, Fill, FilterMode, ImageShader, LinearGradient, MipmapMode,
@@ -46,10 +66,10 @@ function Waterfall({ frame, width, speed, height }: { frame: WaterfallFrame | nu
   </Canvas>;
 }
 
-export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative, sgbDetections, fgbDetections, compact = false }: {
+export function Spectrum({ line, channels, centerHz, epoch, floor, range, average, speed, automatic, calibrationDb, relative, sgbDetections, fgbDetections, fgbMaxCandidates, compact = false }: {
   line: SpectrumEvent | null; epoch: number; floor: number; range: number; average: number;
   channels: AcquisitionChannel[]; centerHz: number; speed: number; automatic: boolean; calibrationDb: number; relative: boolean;
-  sgbDetections: number; fgbDetections: number;
+  sgbDetections: number; fgbDetections: number; fgbMaxCandidates: number;
   compact?: boolean;
 }) {
   const startHz = line?.startHz ?? centerHz - 50000;
@@ -161,7 +181,7 @@ export function Spectrum({ line, channels, centerHz, epoch, floor, range, averag
     <View style={[styles.title, compact && { flexDirection: "column", gap: 4, paddingVertical: 5, paddingHorizontal: 4 }]}>
       {!compact && <Text style={[styles.titleText, compact && { flex: 0 }]}>FFT  {frequencyLabel(0)} — {frequencyLabel(1)} MHz</Text>}
       <View style={{ flexDirection: "row" }}>
-        <DetectionActivity generation="FGB" detections={fgbDetections} />
+        <DetectionActivity generation="FGB" detections={fgbDetections} maximum={fgbMaxCandidates} />
         <DetectionActivity generation="SGB" detections={sgbDetections} />
       </View>
       {!compact && <Text style={[styles.titleText, { textAlign: "right" }]}>{relative ? "Relative level · WAV" : `Estimated dBm · offset ${calibrationDb.toFixed(1)} dB`}</Text>}</View>

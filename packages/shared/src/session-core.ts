@@ -1,3 +1,23 @@
+/*
+ * SarsatSDR
+ * Copyright (C) 2026 Frederic BORRY - F4JRX
+ * Authors: Frederic BORRY - F4JRX and Copilot (AI-assisted development).
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import { nativeEventSchema, retuneSchema, type ServerEvent, type StartCommand } from "./protocol";
 
 export function argumentsFor(command: StartCommand, samples: string[], samplePath: (sample: string) => string): string[] {
@@ -18,6 +38,8 @@ export function argumentsFor(command: StartCommand, samples: string[], samplePat
   if (!s.qualityCheck) args.push("--no-quality-check");
   if (s.showBchFailures) args.push("--show-bch-failures");
   else if (s.fgb) args.push("--show-fgb-bch-failures");
+  for (const band of s.fgbExcludedBands)
+    args.push("--fgb-exclude-band", String(band.offsetHz), String(band.deviationHz));
   args.push("--fgb-alpha", String(s.fgbAlpha), "--fgb-beta", String(s.fgbBeta),
     "--fgb-zeta", String(s.fgbZeta), "--fgb-average", String(s.fgbAverage),
     "--fgb-runtime-ms", String(s.fgbRuntimeMs),

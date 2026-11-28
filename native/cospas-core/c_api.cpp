@@ -1,3 +1,23 @@
+/*
+ * SarsatSDR
+ * Copyright (C) 2026 Frederic BORRY - F4JRX
+ * Authors: Frederic BORRY - F4JRX and Copilot (AI-assisted development).
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #include <cospas/c_api.h>
 #include <cospas/decoder.hpp>
 
@@ -68,7 +88,8 @@ bool flag(uint32_t value) {
 }
 
 cospas::DecoderSettings settings(const cs_config& config) {
-    if ((config.struct_size != sizeof(cs_config) && config.struct_size != offsetof(cs_config, fgb_max_candidates) &&
+    if ((config.struct_size != sizeof(cs_config) && config.struct_size != offsetof(cs_config, fgb_excluded_band_count) &&
+         config.struct_size != offsetof(cs_config, fgb_max_candidates) &&
          config.struct_size != offsetof(cs_config, fgb_normal) &&
          config.struct_size != offsetof(cs_config, show_fgb_bch_failures) &&
          config.struct_size != offsetof(cs_config, fgb_bch2_max_errors) &&
@@ -107,6 +128,14 @@ cospas::DecoderSettings settings(const cs_config& config) {
     }
     if (config.struct_size > offsetof(cs_config, fgb_max_candidates))
         result.fgb_max_candidates = config.fgb_max_candidates;
+    if (config.struct_size > offsetof(cs_config, fgb_excluded_band_count)) {
+        if (config.fgb_excluded_band_count > 6)
+            throw std::invalid_argument("At most six FGB frequency bands can be excluded");
+        for (size_t n = 0; n < config.fgb_excluded_band_count; ++n) {
+            const auto& band = config.fgb_excluded_bands[n];
+            result.fgb_excluded_bands.push_back({band.offset_hz, band.deviation_hz});
+        }
+    }
     return result;
 }
 
@@ -377,7 +406,8 @@ extern "C" {
 uint32_t CS_CALL cs_abi_version(void) { return CS_ABI_VERSION; }
 
 cs_status CS_CALL cs_config_init(cs_config* config, size_t config_size, cs_error* error) {
-    if (!config || (config_size < sizeof(cs_config) && config_size != offsetof(cs_config, fgb_max_candidates) &&
+    if (!config || (config_size < sizeof(cs_config) && config_size != offsetof(cs_config, fgb_excluded_band_count) &&
+                    config_size != offsetof(cs_config, fgb_max_candidates) &&
                     config_size != offsetof(cs_config, fgb_normal) &&
                     config_size != offsetof(cs_config, show_fgb_bch_failures) &&
                     config_size != offsetof(cs_config, fgb_bch2_max_errors) &&
@@ -394,7 +424,7 @@ cs_status CS_CALL cs_config_init(cs_config* config, size_t config_size, cs_error
         defaults.prn_alignment, defaults.sgb_filter, defaults.sgb_phase_gain,
         defaults.sgb_frequency_gain, defaults.sgb_max_errors,         defaults.sgb_feedback, defaults.fgb_header_errors,
                 defaults.fgb_bch2_max_errors, defaults.show_fgb_bch_failures,
-                defaults.fgb_normal, defaults.fgb_self_test, defaults.fgb_max_candidates
+                defaults.fgb_normal, defaults.fgb_self_test, defaults.fgb_max_candidates, 0, {}
     };
     std::memcpy(config, &initialized, initialized.struct_size);
     return status(error, CS_OK, "");

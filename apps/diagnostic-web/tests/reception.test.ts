@@ -1,7 +1,27 @@
+/*
+ * SarsatSDR
+ * Copyright (C) 2026 Frederic BORRY - F4JRX
+ * Authors: Frederic BORRY - F4JRX and Copilot (AI-assisted development).
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Frame } from "@sarsat/shared/protocol";
-import { frameNotification, isFrameFiltered, receptionPreferencesSchema } from "../../mobile/src/reception-preferences";
+import { frameNotification, isFrameFiltered, startsFgbCountdown, receptionPreferencesSchema } from "../../mobile/src/reception-preferences";
 import { FgbCountdown } from "../../mobile/src/fgb-countdown";
 import { appPreferencesSchema } from "../../mobile/src/app-preferences";
 import { execFileSync } from "node:child_process";
@@ -26,7 +46,7 @@ test("Saved app preferences round-trip all receiver, decoder, display and player
   assert.ok(saved.settings);
   const { fgbMaxCandidates: _limit, ...legacySettings } = saved.settings;
   const migrated = appPreferencesSchema.parse({ ...saved, settings: legacySettings });
-  assert.equal(migrated.settings?.fgbMaxCandidates, 4);
+  assert.equal(migrated.settings?.fgbMaxCandidates, 5);
   assert.equal(migrated.settings?.fgbOverPeakDb, 17);
   assert.equal("device" in saved, false, "Legacy USB addresses must not survive loading or saving");
   for (const invalid of [{ center: 99 }, { gain: 12 }, { average: 0 }, { waterfallSpeed: 5 },
@@ -41,7 +61,55 @@ test("Frame notification checks every BCH and prioritizes active display filters
   assert.equal(frameNotification(frame(2, "ELT", false), preferences), "ko");
   assert.equal(frameNotification(frame(1, "EPIRB", false), { ...preferences, filterInvalid: true }), "filtered");
   assert.equal(frameNotification(frame(2, "SYSTM", false), { ...preferences, filterOrbitographic: true }), "filtered");
-  assert.equal(frameNotification(frame(1, "ORB"), { ...preferences, notifications: false, filterOrbitographic: true }), null);
+  assert.equal(frameNotification(frame(1, "ORB"), { ...preferences, notifications: false, filterOrbitographic: true }), "filtered");
+});
+
+test("Notification categories can be muted independently without falling back to another sound", () => {
+  const preferences = receptionPreferencesSchema.parse({ filterInvalid: false, filterOrbitographic: false });
+  assert.equal(frameNotification(frame(1, "EPIRB"), { ...preferences, notifications: false }), null);
+  assert.equal(frameNotification(frame(1, "EPIRB", false), { ...preferences, notifications: false }), "ko");
+  assert.equal(frameNotification(frame(1, "EPIRB", false), { ...preferences, invalidNotifications: false }), null);
+  assert.equal(frameNotification(frame(1, "EPIRB"), { ...preferences, invalidNotifications: false }), "ok");
+  assert.equal(frameNotification(frame(1, "ORB", false), {
+    ...preferences, filterOrbitographic: true, filteredNotifications: false,
+  }), null);
+  const restored = receptionPreferencesSchema.parse({ notifications: false });
+  assert.equal(restored.notifications, false);
+  assert.equal(restored.invalidNotifications, true);
+  assert.equal(restored.filteredNotifications, true);
+});
+
+test("Six FGB frequency filters use inclusive center-relative bands, never SGB, and remain reversible", () => {
+  const preferences = receptionPreferencesSchema.parse({ filterInvalid: false, filterOrbitographic: false });
+  const received = { ...frame(1, "EPIRB"), frequencyOffsetHz: -28000 };
+  for (const offset of [-29000, -28000, -27000])
+    assert.equal(isFrameFiltered({ ...received, frequencyOffsetHz: offset }, preferences), true);
+  assert.equal(isFrameFiltered({ ...received, frequencyOffsetHz: -26999 }, preferences), false);
+  assert.equal(isFrameFiltered({ ...received, frequencyOffsetHz: -19000 }, preferences), false);
+  assert.equal(isFrameFiltered({ ...received, frequencyOffsetHz: 13000 }, preferences), true);
+  assert.equal(isFrameFiltered({ ...received, generation: 2 }, preferences), false);
+  assert.equal(frameNotification(received, preferences), "filtered");
+  assert.equal(isFrameFiltered(received, { ...preferences,
+    fgbFrequencyFilters: preferences.fgbFrequencyFilters.map(filter => ({ ...filter, enabled: false })) }), false);
+  const restored = receptionPreferencesSchema.parse(JSON.parse(JSON.stringify(preferences)));
+  assert.deepEqual(restored, preferences);
+  assert.equal(406200000 + restored.fgbFrequencyFilters[0].offsetHz, 406172000);
+  for (const bands of [[], preferences.fgbFrequencyFilters.slice(1),
+    preferences.fgbFrequencyFilters.map(filter => ({ ...filter, deviationHz: 0 }))])
+    assert.equal(receptionPreferencesSchema.safeParse({ fgbFrequencyFilters: bands }).success, false);
+});
+
+test("Countdown excludes filtered frames and orbitography unless explicitly enabled", () => {
+  const preferences = receptionPreferencesSchema.parse({ filterInvalid: false, filterOrbitographic: false });
+  assert.equal(startsFgbCountdown(frame(1, "EPIRB"), preferences), true);
+  assert.equal(startsFgbCountdown(frame(2, "ELT"), preferences), false);
+  assert.equal(startsFgbCountdown(frame(1, "EPIRB"), { ...preferences, countdown: false }), false);
+  assert.equal(startsFgbCountdown(frame(1, "ORB"), preferences), false);
+  assert.equal(startsFgbCountdown(frame(1, "ORB"), { ...preferences, orbitoCountdown: true }), true);
+  assert.equal(startsFgbCountdown(frame(1, "ORB"), { ...preferences, orbitoCountdown: true, filterOrbitographic: true }), false);
+  assert.equal(startsFgbCountdown(frame(1, "EPIRB", false), { ...preferences, filterInvalid: true }), false);
+  assert.equal(startsFgbCountdown({ ...frame(1, "ORB"), frequencyOffsetHz: 11000 },
+    { ...preferences, orbitoCountdown: true }), false);
 });
 
 test("Display filters are reversible, combine with OR and keep source frames unchanged", () => {

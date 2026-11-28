@@ -1,3 +1,23 @@
+/*
+ * SarsatSDR
+ * Copyright (C) 2026 Frederic BORRY - F4JRX
+ * Authors: Frederic BORRY - F4JRX and Copilot (AI-assisted development).
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -18,6 +38,48 @@ async function defaults() {
   const result = await execute(executable, ["settings", "--json"]);
   return settingsSchema.parse(JSON.parse(result.stdout));
 }
+
+test("FGB pre-decoder bands cross the transport and exclude candidates before acquisition", async () => {
+  const sample = "fgb.wav";
+  const profiles = playbackProfilesSchema.parse(JSON.parse(await readFile(resolve(root, "samples", "playback-profiles.json"), "utf8")));
+  const playback = playbackConfiguration(await defaults(), profiles[sample]);
+  const command = startSchema.parse({ type: "start", source: "sample", sample, centerHz: 406050000,
+    gainIndex: 8, agc: true, ...playback, settings: { ...playback.settings, sgb: false } });
+  for (const streaming of [false, true]) {
+    let baselineCandidates = 0;
+    for (const band of [null, { offsetHz: 200000, deviationHz: 1000 }, { offsetHz: 0, deviationHz: 100000 }]) {
+      const settings = { ...command.settings, fgbExcludedBands: band ? [band] : [] };
+      const args = argumentsFor({ ...command, settings }, [sample], root)
+        .filter(arg => !["--events", "--control-stdin", "--realtime"].includes(arg));
+      if (band) {
+        const index = args.indexOf("--fgb-exclude-band");
+        assert.deepEqual(args.slice(index + 1, index + 3), [String(band.offsetHz), String(band.deviationHz)]);
+      }
+      if (streaming) args.push("--block-samples", "4093", "--worker-queue", "2");
+      const result = await execute(executable, [...args, "--json"], { maxBuffer: 8 * 1024 * 1024, timeout: 15000 }).catch(error => {
+        if (error.code === 2) return { stdout: String(error.stdout) };
+        throw error;
+      });
+      const decoded = JSON.parse(result.stdout);
+      if (band?.offsetHz === 0) {
+        assert.equal(decoded.diagnostics.fgbCandidates, 0);
+        assert.deepEqual(decoded.frames, []);
+      } else {
+        assert.ok(decoded.frames.length > 0);
+        if (!band) baselineCandidates = decoded.diagnostics.fgbCandidates;
+        else assert.equal(decoded.diagnostics.fgbCandidates, baselineCandidates, "An unrelated band must not change acquisition");
+      }
+    }
+  }
+  for (const bands of [
+    [{ offsetHz: 0, deviationHz: 0 }], [{ offsetHz: Infinity, deviationHz: 1000 }],
+    Array.from({ length: 7 }, () => ({ offsetHz: 11000, deviationHz: 2000 })),
+  ]) assert.equal(startSchema.safeParse({ ...command, settings: { ...command.settings, fgbExcludedBands: bands } }).success, false);
+  for (const values of [["11000"], ["11000", "0"], ["nan", "1000"]]) {
+    await assert.rejects(execute(executable, ["decode", "--input", resolve(root, "samples", sample),
+      "--fgb-exclude-band", ...values]), /requires offset and deviation|Invalid FGB excluded frequency band|Invalid number/);
+  }
+});
 
 test("Recorded WAV center metadata reaches playback and spectrum frequencies", async () => {
   const directory = await mkdtemp(resolve(tmpdir(), "sarsat-recording-"));
@@ -212,7 +274,7 @@ test("UI command validation preserves native defaults and constrains sample acce
   assert.equal(startSchema.safeParse({ ...command, bus: 1 }).success, false);
   assert.equal(startSchema.safeParse({ ...command, settings: { ...settings, sgbThreshold: 513 } }).success, false);
   assert.equal(startSchema.safeParse({ ...command, settings: { ...settings, sgbThreshold: 0 } }).success, true);
-  assert.equal(settings.fgbMaxCandidates, 4);
+  assert.equal(settings.fgbMaxCandidates, 5);
   const tuned = { ...settings, fgbZeta: .03, fgbAverage: .15, fgbRuntimeMs: 575, fgbMaxCandidates: 10, fgbMaxErrors: 1, fgbHeaderErrors: 2, fgbBch2MaxErrors: 1,
     sgbFilter: .25, sgbFrequencyGain: 1.75, sgbFeedback: 3, sgbMaxErrors: 2, searchDepth: 5 };
   for (const source of ["sample", "rtl"] as const) {

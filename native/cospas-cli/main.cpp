@@ -1,3 +1,23 @@
+/*
+ * SarsatSDR
+ * Copyright (C) 2026 Frederic BORRY - F4JRX
+ * Authors: Frederic BORRY - F4JRX and Copilot (AI-assisted development).
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #include <cospas/c_api.h>
 #include "beacon.hpp"
 #include "wav.hpp"
@@ -187,7 +207,14 @@ T number(const char* text, std::string_view option) {
 }
 
 bool setting_option(std::string_view arg, int& n, int argc, char** argv, cs_config& s) {
-    if (arg == "--fgb-only") s.sgb = 0;
+    if (arg == "--fgb-exclude-band") {
+        if (n + 2 >= argc) throw std::invalid_argument("--fgb-exclude-band requires offset and deviation in Hz");
+        if (s.fgb_excluded_band_count >= 6) throw std::invalid_argument("At most six FGB frequency bands can be excluded");
+        auto& band = s.fgb_excluded_bands[s.fgb_excluded_band_count++];
+        band.offset_hz = number<double>(argv[++n], arg);
+        band.deviation_hz = number<double>(argv[++n], arg);
+    }
+    else if (arg == "--fgb-only") s.sgb = 0;
     else if (arg == "--sgb-only") s.fgb = 0;
     else if (arg == "--normal-prn-only") s.test_prn = 0;
     else if (arg == "--test-prn-only") s.normal_prn = 0;
@@ -253,7 +280,8 @@ constexpr std::string_view usage =
     "  --fgb-zeta N            PLL Zeta (default 0.01)\n"
     "  --fgb-average N         detection average, 0..1 (default 0.045)\n"
     "  --fgb-runtime-ms N      channel RunTime, positive ms (default 550)\n"
-    "  --fgb-max-candidates N  simultaneous FGB candidates, 1..10 (default 4)\n"
+    "  --fgb-max-candidates N  simultaneous FGB candidates, 1..10 (default 5)\n"
+    "  --fgb-exclude-band H D  exclude FGB candidates within offset H +/- D Hz (up to 6 bands)\n"
     "  --fgb-max-errors N      FGB BCH-1 correction limit, 0..3 (default 3)\n"
     "  --fgb-bch2-max-errors N FGB BCH-2 correction limit, 0..2 (default 2)\n"
     "  --fgb-header-errors N   FGB 24-bit header bit errors allowed, 0..3 (default 2)\n"
